@@ -1,0 +1,60 @@
+#!/bin/bash
+# s003_create_gitignore.sh
+# Creates the .gitignore file
+
+PROJECT_ROOT="/home/user/projects/linblock"
+
+cat > "$PROJECT_ROOT/.gitignore" << 'EOF'
+# LinBlock .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Build outputs
+build/output/
+*.img
+*.tar.gz
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.cache/
+.tmp/
+*.log
+
+# AOSP (if synced locally)
+.repo/
+out/
+
+# Virtual environment
+venv/
+.env
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak
+EOF
+
+echo "Created: $PROJECT_ROOT/.gitignore"
