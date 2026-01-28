@@ -2,37 +2,191 @@
 
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
+import os
+import configparser
 
-from .page_base import PageBase
+
+# Default Android images directory (relative to project root)
+def _get_default_images_dir():
+    """Get the default android-images directory path."""
+    # Try relative to this file first (for installed app)
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    images_dir = os.path.join(base, "android-images")
+    if os.path.isdir(images_dir):
+        return images_dir
+    # Fallback to user config directory
+    return os.path.expanduser("~/.linblock/android-images")
 
 
-class LoadOSPage(PageBase):
+class LoadOSPage(Gtk.ScrolledWindow):
+    """Load OS page with Android selection and configuration form."""
+
     def __init__(self):
         super().__init__()
+        self.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self._fields = {}
+        self._os_info = {}
+        self._images_dir = _get_default_images_dir()
         self._build_content()
 
     def _build_content(self):
-        self.add_section_header("Create New OS Profile")
-        self.add_text("Configure all emulator settings below, then save.")
+        # Main horizontal paned layout (left form, right info panel)
+        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+
+        # Left side: Form (half width)
+        left_scroll = Gtk.ScrolledWindow()
+        left_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        left_scroll.set_size_request(450, -1)
+
+        self._form_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self._form_box.set_margin_end(20)
+        left_scroll.add(self._form_box)
+
+        # Right side: OS Info Panel
+        right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        right_box.set_size_request(350, -1)
+        right_box.get_style_context().add_class("os-info-panel")
+
+        info_label = Gtk.Label()
+        info_label.set_markup("<b>Android OS Information</b>")
+        info_label.set_halign(Gtk.Align.START)
+        right_box.pack_start(info_label, False, False, 0)
+
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        right_box.pack_start(sep, False, False, 4)
+
+        # Info display area
+        self._info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self._info_placeholder = Gtk.Label(label="Select an Android OS to view details")
+        self._info_placeholder.set_halign(Gtk.Align.START)
+        self._info_placeholder.set_opacity(0.6)
+        self._info_box.pack_start(self._info_placeholder, False, False, 0)
+        right_box.pack_start(self._info_box, True, True, 0)
+
+        main_box.pack_start(left_scroll, False, False, 0)
+        main_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10)
+        main_box.pack_start(right_box, True, True, 0)
+
+        self.add(main_box)
+        self._build_form()
+
+    def _build_form(self):
+        # Page header
+        header = Gtk.Label()
+        header.set_markup("<b><big>Create New OS Profile</big></b>")
+        header.set_halign(Gtk.Align.START)
+        self._form_box.pack_start(header, False, False, 0)
+
+        desc = Gtk.Label(label="Select Android OS and configure emulator settings.")
+        desc.set_halign(Gtk.Align.START)
+        desc.set_line_wrap(True)
+        self._form_box.pack_start(desc, False, False, 0)
+
+        # === Android OS Selection Section ===
+        os_frame = Gtk.Frame(label=" Android OS Selection ")
+        os_frame.set_margin_top(12)
+        os_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        os_box.set_margin_start(12)
+        os_box.set_margin_end(12)
+        os_box.set_margin_top(8)
+        os_box.set_margin_bottom(8)
+
+        # Stock Android option
+        self._rb_stock = Gtk.RadioButton.new_with_label(None, "Stock Android (Default)")
+        self._rb_stock.connect("toggled", self._on_os_source_toggled)
+        os_box.pack_start(self._rb_stock, False, False, 0)
+
+        stock_desc = Gtk.Label(label=f"    Location: {self._images_dir}")
+        stock_desc.set_halign(Gtk.Align.START)
+        stock_desc.set_opacity(0.7)
+        os_box.pack_start(stock_desc, False, False, 0)
+
+        # Stock Android version selector
+        stock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        stock_row.set_margin_start(24)
+        stock_label = Gtk.Label(label="Version:")
+        stock_label.set_size_request(80, -1)
+        stock_label.set_halign(Gtk.Align.START)
+        stock_row.pack_start(stock_label, False, False, 0)
+
+        self._stock_combo = Gtk.ComboBoxText()
+        self._populate_stock_images()
+        self._stock_combo.connect("changed", self._on_stock_version_changed)
+        self._fields["stock_version"] = self._stock_combo
+        stock_row.pack_start(self._stock_combo, True, True, 0)
+
+        self._download_btn = Gtk.Button(label="Download More...")
+        self._download_btn.connect("clicked", self._on_download_clicked)
+        stock_row.pack_start(self._download_btn, False, False, 0)
+        os_box.pack_start(stock_row, False, False, 0)
+
+        # Separator
+        os_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+
+        # Custom Android option
+        self._rb_custom = Gtk.RadioButton.new_with_label_from_widget(self._rb_stock, "Custom Android OS")
+        self._rb_custom.connect("toggled", self._on_os_source_toggled)
+        os_box.pack_start(self._rb_custom, False, False, 0)
+
+        custom_desc = Gtk.Label(label="    Select a folder containing Android system image")
+        custom_desc.set_halign(Gtk.Align.START)
+        custom_desc.set_opacity(0.7)
+        os_box.pack_start(custom_desc, False, False, 0)
+
+        # Custom path selector
+        custom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        custom_row.set_margin_start(24)
+        custom_label = Gtk.Label(label="Path:")
+        custom_label.set_size_request(80, -1)
+        custom_label.set_halign(Gtk.Align.START)
+        custom_row.pack_start(custom_label, False, False, 0)
+
+        self._custom_entry = Gtk.Entry()
+        self._custom_entry.set_placeholder_text("Select Android OS folder...")
+        self._custom_entry.set_sensitive(False)
+        self._custom_entry.connect("changed", self._on_custom_path_changed)
+        self._fields["custom_path"] = self._custom_entry
+        custom_row.pack_start(self._custom_entry, True, True, 0)
+
+        self._browse_btn = Gtk.Button(label="Browse...")
+        self._browse_btn.connect("clicked", self._on_browse_os_clicked)
+        self._browse_btn.set_sensitive(False)
+        custom_row.pack_start(self._browse_btn, False, False, 0)
+        os_box.pack_start(custom_row, False, False, 0)
+
+        os_frame.add(os_box)
+        self._form_box.pack_start(os_frame, False, False, 0)
+
+        # Update info panel with default stock selection
+        self._update_stock_info()
+
+        # === Configuration Sections ===
+        self._build_config_sections()
+
+        # === Save Section ===
+        self._build_save_section()
+
+    def _build_config_sections(self):
+        """Build the configuration expander sections."""
 
         # Section 1: Graphics / Rendering
         exp1 = Gtk.Expander(label="Graphics / Rendering")
-        exp1.set_expanded(True)
+        exp1.set_expanded(False)
         box1 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         box1.set_margin_start(12)
         box1.set_margin_top(6)
         box1.set_margin_bottom(6)
 
-        # GPU mode
-        row = self._make_combo_row("GPU Mode:", ["host", "software", "off"], "gpu_mode")
-        box1.pack_start(row, False, False, 0)
+        box1.pack_start(self._make_combo_row("GPU Mode:", ["host", "software", "off"], "gpu_mode"), False, False, 0)
 
-        # API radio buttons
         api_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         api_label = Gtk.Label(label="Graphics API:")
-        api_label.set_size_request(140, -1)
+        api_label.set_size_request(120, -1)
         api_label.set_halign(Gtk.Align.START)
         api_box.pack_start(api_label, False, False, 0)
         rb_opengl = Gtk.RadioButton.new_with_label(None, "OpenGL")
@@ -43,12 +197,10 @@ class LoadOSPage(PageBase):
         api_box.pack_start(rb_vulkan, False, False, 0)
         box1.pack_start(api_box, False, False, 0)
 
-        # Renderer
-        row = self._make_combo_row("Renderer:", ["auto", "angle", "swiftshader", "native"], "renderer")
-        box1.pack_start(row, False, False, 0)
+        box1.pack_start(self._make_combo_row("Renderer:", ["auto", "angle", "swiftshader", "native"], "renderer"), False, False, 0)
 
         exp1.add(box1)
-        self.add_widget(exp1)
+        self._form_box.pack_start(exp1, False, False, 0)
 
         # Section 2: ADB Configuration
         exp2 = Gtk.Expander(label="ADB Configuration")
@@ -57,15 +209,12 @@ class LoadOSPage(PageBase):
         box2.set_margin_top(6)
         box2.set_margin_bottom(6)
 
-        row = self._make_entry_row("ADB Path:", "/usr/bin/adb", "adb_path")
-        box2.pack_start(row, False, False, 0)
-        row = self._make_spin_row("ADB Port:", 5555, 1024, 65535, "adb_port")
-        box2.pack_start(row, False, False, 0)
-        row = self._make_check_row("Auto-connect on boot", True, "adb_auto_connect")
-        box2.pack_start(row, False, False, 0)
+        box2.pack_start(self._make_entry_row("ADB Path:", "/usr/bin/adb", "adb_path"), False, False, 0)
+        box2.pack_start(self._make_spin_row("ADB Port:", 5555, 1024, 65535, "adb_port"), False, False, 0)
+        box2.pack_start(self._make_check_row("Auto-connect on boot", True, "adb_auto_connect"), False, False, 0)
 
         exp2.add(box2)
-        self.add_widget(exp2)
+        self._form_box.pack_start(exp2, False, False, 0)
 
         # Section 3: Device Simulation
         exp3 = Gtk.Expander(label="Device Simulation")
@@ -74,24 +223,18 @@ class LoadOSPage(PageBase):
         box3.set_margin_top(6)
         box3.set_margin_bottom(6)
 
-        row = self._make_combo_row("Screen Preset:", ["phone", "tablet", "custom"], "screen_preset")
-        box3.pack_start(row, False, False, 0)
-        row = self._make_spin_row("Width (px):", 1080, 240, 3840, "screen_width")
-        box3.pack_start(row, False, False, 0)
-        row = self._make_spin_row("Height (px):", 1920, 320, 3840, "screen_height")
-        box3.pack_start(row, False, False, 0)
+        box3.pack_start(self._make_combo_row("Screen Preset:", ["phone", "tablet", "custom"], "screen_preset"), False, False, 0)
+        box3.pack_start(self._make_spin_row("Width (px):", 1080, 240, 3840, "screen_width"), False, False, 0)
+        box3.pack_start(self._make_spin_row("Height (px):", 1920, 320, 3840, "screen_height"), False, False, 0)
 
-        # Sensor checkboxes
         sensor_label = Gtk.Label(label="Sensors:")
         sensor_label.set_halign(Gtk.Align.START)
         box3.pack_start(sensor_label, False, False, 0)
         for sensor in ["Accelerometer", "Gyroscope", "Proximity", "GPS"]:
-            key = f"sensor_{sensor.lower()}"
-            row = self._make_check_row(sensor, True, key)
-            box3.pack_start(row, False, False, 0)
+            box3.pack_start(self._make_check_row(sensor, True, f"sensor_{sensor.lower()}"), False, False, 0)
 
         exp3.add(box3)
-        self.add_widget(exp3)
+        self._form_box.pack_start(exp3, False, False, 0)
 
         # Section 4: Storage Paths
         exp4 = Gtk.Expander(label="Storage Paths")
@@ -100,15 +243,12 @@ class LoadOSPage(PageBase):
         box4.set_margin_top(6)
         box4.set_margin_bottom(6)
 
-        row = self._make_file_row("Shared Folder:", "~/LinBlock/shared", "storage_shared")
-        box4.pack_start(row, False, False, 0)
-        row = self._make_file_row("Screenshot Dir:", "~/LinBlock/screenshots", "storage_screenshots")
-        box4.pack_start(row, False, False, 0)
-        row = self._make_file_row("Image Cache:", "~/LinBlock/cache", "storage_cache")
-        box4.pack_start(row, False, False, 0)
+        box4.pack_start(self._make_file_row("Shared Folder:", "~/LinBlock/shared", "storage_shared"), False, False, 0)
+        box4.pack_start(self._make_file_row("Screenshot Dir:", "~/LinBlock/screenshots", "storage_screenshots"), False, False, 0)
+        box4.pack_start(self._make_file_row("Image Cache:", "~/LinBlock/cache", "storage_cache"), False, False, 0)
 
         exp4.add(box4)
-        self.add_widget(exp4)
+        self._form_box.pack_start(exp4, False, False, 0)
 
         # Section 5: Network
         exp5 = Gtk.Expander(label="Network")
@@ -117,15 +257,12 @@ class LoadOSPage(PageBase):
         box5.set_margin_top(6)
         box5.set_margin_bottom(6)
 
-        row = self._make_check_row("Bridge Mode", False, "net_bridge")
-        box5.pack_start(row, False, False, 0)
-        row = self._make_entry_row("Proxy Address:", "", "net_proxy_addr")
-        box5.pack_start(row, False, False, 0)
-        row = self._make_spin_row("Proxy Port:", 0, 0, 65535, "net_proxy_port")
-        box5.pack_start(row, False, False, 0)
+        box5.pack_start(self._make_check_row("Bridge Mode", False, "net_bridge"), False, False, 0)
+        box5.pack_start(self._make_entry_row("Proxy Address:", "", "net_proxy_addr"), False, False, 0)
+        box5.pack_start(self._make_spin_row("Proxy Port:", 0, 0, 65535, "net_proxy_port"), False, False, 0)
 
         exp5.add(box5)
-        self.add_widget(exp5)
+        self._form_box.pack_start(exp5, False, False, 0)
 
         # Section 6: Input Mapping
         exp6 = Gtk.Expander(label="Input Mapping")
@@ -134,15 +271,12 @@ class LoadOSPage(PageBase):
         box6.set_margin_top(6)
         box6.set_margin_bottom(6)
 
-        row = self._make_check_row("Keyboard-to-touch mapping", True, "input_kbd_touch")
-        box6.pack_start(row, False, False, 0)
-        row = self._make_check_row("Gamepad support", False, "input_gamepad")
-        box6.pack_start(row, False, False, 0)
-        row = self._make_combo_row("Mouse Mode:", ["direct", "relative", "touch"], "input_mouse_mode")
-        box6.pack_start(row, False, False, 0)
+        box6.pack_start(self._make_check_row("Keyboard-to-touch mapping", True, "input_kbd_touch"), False, False, 0)
+        box6.pack_start(self._make_check_row("Gamepad support", False, "input_gamepad"), False, False, 0)
+        box6.pack_start(self._make_combo_row("Mouse Mode:", ["direct", "relative", "touch"], "input_mouse_mode"), False, False, 0)
 
         exp6.add(box6)
-        self.add_widget(exp6)
+        self._form_box.pack_start(exp6, False, False, 0)
 
         # Section 7: Camera / Media
         exp7 = Gtk.Expander(label="Camera / Media")
@@ -151,15 +285,12 @@ class LoadOSPage(PageBase):
         box7.set_margin_top(6)
         box7.set_margin_bottom(6)
 
-        row = self._make_check_row("Webcam passthrough", False, "cam_webcam")
-        box7.pack_start(row, False, False, 0)
-        row = self._make_combo_row("Microphone:", ["default", "none", "virtual"], "cam_mic")
-        box7.pack_start(row, False, False, 0)
-        row = self._make_combo_row("Audio Output:", ["default", "none", "virtual"], "cam_audio")
-        box7.pack_start(row, False, False, 0)
+        box7.pack_start(self._make_check_row("Webcam passthrough", False, "cam_webcam"), False, False, 0)
+        box7.pack_start(self._make_combo_row("Microphone:", ["default", "none", "virtual"], "cam_mic"), False, False, 0)
+        box7.pack_start(self._make_combo_row("Audio Output:", ["default", "none", "virtual"], "cam_audio"), False, False, 0)
 
         exp7.add(box7)
-        self.add_widget(exp7)
+        self._form_box.pack_start(exp7, False, False, 0)
 
         # Section 8: Performance
         exp8 = Gtk.Expander(label="Performance")
@@ -168,15 +299,12 @@ class LoadOSPage(PageBase):
         box8.set_margin_top(6)
         box8.set_margin_bottom(6)
 
-        row = self._make_combo_row("Hypervisor:", ["kvm", "haxm", "software"], "perf_hypervisor")
-        box8.pack_start(row, False, False, 0)
-        row = self._make_combo_row("RAM (MB):", ["2048", "4096", "6144", "8192", "12288", "16384"], "perf_ram")
-        box8.pack_start(row, False, False, 0)
-        row = self._make_spin_row("CPU Cores:", 4, 1, 16, "perf_cpu_cores")
-        box8.pack_start(row, False, False, 0)
+        box8.pack_start(self._make_combo_row("Hypervisor:", ["kvm", "haxm", "software"], "perf_hypervisor"), False, False, 0)
+        box8.pack_start(self._make_combo_row("RAM (MB):", ["2048", "4096", "6144", "8192", "12288", "16384"], "perf_ram"), False, False, 0)
+        box8.pack_start(self._make_spin_row("CPU Cores:", 4, 1, 16, "perf_cpu_cores"), False, False, 0)
 
         exp8.add(box8)
-        self.add_widget(exp8)
+        self._form_box.pack_start(exp8, False, False, 0)
 
         # Section 9: Google Services
         exp9 = Gtk.Expander(label="Google Services")
@@ -198,18 +326,17 @@ class LoadOSPage(PageBase):
             ("Google Assistant", "google_assistant"),
         ]
         for label_text, key in google_services:
-            row = self._make_check_row(label_text, False, key)
-            box9.pack_start(row, False, False, 0)
+            box9.pack_start(self._make_check_row(label_text, False, key), False, False, 0)
 
         exp9.add(box9)
-        self.add_widget(exp9)
+        self._form_box.pack_start(exp9, False, False, 0)
 
-        # Bottom: OS Name + Save
+    def _build_save_section(self):
+        """Build the save profile section."""
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        self.add_widget(sep)
+        self._form_box.pack_start(sep, False, False, 8)
 
         save_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        save_box.set_margin_top(8)
 
         name_label = Gtk.Label(label="OS Name:")
         name_label.set_halign(Gtk.Align.START)
@@ -217,7 +344,6 @@ class LoadOSPage(PageBase):
 
         self._os_name_entry = Gtk.Entry()
         self._os_name_entry.set_placeholder_text("Enter OS profile name...")
-        self._os_name_entry.set_hexpand(True)
         self._fields["os_name"] = self._os_name_entry
         save_box.pack_start(self._os_name_entry, True, True, 0)
 
@@ -226,13 +352,13 @@ class LoadOSPage(PageBase):
         save_btn.connect("clicked", self._on_save_clicked)
         save_box.pack_start(save_btn, False, False, 0)
 
-        self.add_widget(save_box)
+        self._form_box.pack_start(save_box, False, False, 0)
 
     def _make_combo_row(self, label_text, options, key):
         """Create a label + combo box row."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         label = Gtk.Label(label=label_text)
-        label.set_size_request(140, -1)
+        label.set_size_request(120, -1)
         label.set_halign(Gtk.Align.START)
         box.pack_start(label, False, False, 0)
 
@@ -248,7 +374,7 @@ class LoadOSPage(PageBase):
         """Create a label + entry row."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         label = Gtk.Label(label=label_text)
-        label.set_size_request(140, -1)
+        label.set_size_request(120, -1)
         label.set_halign(Gtk.Align.START)
         box.pack_start(label, False, False, 0)
 
@@ -262,14 +388,11 @@ class LoadOSPage(PageBase):
         """Create a label + spin button row."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         label = Gtk.Label(label=label_text)
-        label.set_size_request(140, -1)
+        label.set_size_request(120, -1)
         label.set_halign(Gtk.Align.START)
         box.pack_start(label, False, False, 0)
 
-        adj = Gtk.Adjustment(
-            value=default, lower=min_val, upper=max_val,
-            step_increment=1, page_increment=10
-        )
+        adj = Gtk.Adjustment(value=default, lower=min_val, upper=max_val, step_increment=1, page_increment=10)
         spin = Gtk.SpinButton(adjustment=adj)
         spin.set_numeric(True)
         self._fields[key] = spin
@@ -287,7 +410,7 @@ class LoadOSPage(PageBase):
         """Create a label + file entry row."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         label = Gtk.Label(label=label_text)
-        label.set_size_request(140, -1)
+        label.set_size_request(120, -1)
         label.set_halign(Gtk.Align.START)
         box.pack_start(label, False, False, 0)
 
@@ -296,13 +419,103 @@ class LoadOSPage(PageBase):
         self._fields[key] = entry
         box.pack_start(entry, True, True, 0)
 
-        browse_btn = Gtk.Button(label="Browse...")
+        browse_btn = Gtk.Button(label="...")
         browse_btn.connect("clicked", self._on_browse_clicked, entry)
         box.pack_start(browse_btn, False, False, 0)
         return box
 
+    def _populate_stock_images(self):
+        """Scan android-images directory and populate the combo box."""
+        self._stock_images = {}  # Maps combo id to path
+
+        if os.path.isdir(self._images_dir):
+            for entry in sorted(os.listdir(self._images_dir)):
+                entry_path = os.path.join(self._images_dir, entry)
+                if os.path.isdir(entry_path):
+                    # Check if it has a system.img or source.properties
+                    has_system = os.path.exists(os.path.join(entry_path, "system.img"))
+                    has_props = os.path.exists(os.path.join(entry_path, "source.properties"))
+
+                    if has_system or has_props:
+                        # Try to get display name from source.properties
+                        info = self._parse_android_folder(entry_path)
+                        android_ver = info.get("AndroidVersion", info.get("ro.build.version.release", ""))
+                        api_level = info.get("SystemImage.ApiLevel", info.get("ro.build.version.sdk", ""))
+                        abi = info.get("SystemImage.Abi", info.get("ro.product.cpu.abi", "x86_64"))
+                        tag = info.get("SystemImage.TagDisplay", info.get("SystemImage.TagId", ""))
+
+                        if android_ver and api_level:
+                            display = f"Android {android_ver} (API {api_level}) - {abi}"
+                            if tag:
+                                display += f" [{tag}]"
+                        else:
+                            display = entry
+
+                        self._stock_images[entry] = entry_path
+                        self._stock_combo.append(entry, display)
+
+        # If no images found, add placeholder
+        if not self._stock_images:
+            self._stock_combo.append("none", "No images found - click Download More...")
+            self._stock_images["none"] = None
+
+        self._stock_combo.set_active(0)
+
+    def _on_os_source_toggled(self, button):
+        """Handle OS source radio button toggle."""
+        is_custom = self._rb_custom.get_active()
+        self._stock_combo.set_sensitive(not is_custom)
+        self._download_btn.set_sensitive(not is_custom)
+        self._custom_entry.set_sensitive(is_custom)
+        self._browse_btn.set_sensitive(is_custom)
+
+        if not is_custom:
+            self._update_stock_info()
+        else:
+            self._update_custom_info()
+
+    def _on_stock_version_changed(self, combo):
+        """Handle stock version selection change."""
+        self._update_stock_info()
+
+    def _on_custom_path_changed(self, entry):
+        """Handle custom path entry change."""
+        self._update_custom_info()
+
+    def _on_download_clicked(self, button):
+        """Handle download button click."""
+        version_id = self._stock_combo.get_active_id()
+        dialog = Gtk.MessageDialog(
+            transient_for=self.get_toplevel(),
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text=f"Download {version_id}",
+        )
+        dialog.format_secondary_text(
+            f"Download functionality will fetch {version_id} system image\n"
+            "to ~/.linblock/android-images/\n\n"
+            "(Not yet implemented)"
+        )
+        dialog.run()
+        dialog.destroy()
+
+    def _on_browse_os_clicked(self, button):
+        """Handle browse for custom OS button click."""
+        dialog = Gtk.FileChooserDialog(
+            title="Select Android System Image Folder",
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK,
+        )
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self._custom_entry.set_text(dialog.get_filename())
+        dialog.destroy()
+
     def _on_browse_clicked(self, button, entry):
-        """Handle browse button click."""
+        """Handle browse button click for path entries."""
         dialog = Gtk.FileChooserDialog(
             title="Select Directory",
             action=Gtk.FileChooserAction.SELECT_FOLDER,
@@ -315,6 +528,159 @@ class LoadOSPage(PageBase):
         if response == Gtk.ResponseType.OK:
             entry.set_text(dialog.get_filename())
         dialog.destroy()
+
+    def _update_stock_info(self):
+        """Update info panel with stock Android details."""
+        version_id = self._stock_combo.get_active_id()
+
+        if not version_id or version_id == "none":
+            self._display_os_info({"Status": "No Android image selected"})
+            return
+
+        # Get the path for this image
+        image_path = self._stock_images.get(version_id)
+        if image_path and os.path.isdir(image_path):
+            info = self._parse_android_folder(image_path)
+            self._display_os_info(info)
+        else:
+            self._display_os_info({"Status": "Image not found"})
+
+    def _update_custom_info(self):
+        """Update info panel with custom Android folder details."""
+        path = self._custom_entry.get_text().strip()
+        if not path or not os.path.isdir(path):
+            self._display_os_info({"Status": "No valid folder selected"})
+            return
+
+        info = self._parse_android_folder(path)
+        self._display_os_info(info)
+
+    def _parse_android_folder(self, path):
+        """Parse Android system image folder for metadata."""
+        info = {}
+
+        # Try to read source.properties
+        source_props = os.path.join(path, "source.properties")
+        if os.path.exists(source_props):
+            try:
+                with open(source_props, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if '=' in line and not line.startswith('#'):
+                            key, value = line.split('=', 1)
+                            info[key.strip()] = value.strip()
+            except Exception as e:
+                info["Parse Error"] = str(e)
+
+        # Try to read build.prop for additional info
+        build_prop = os.path.join(path, "build.prop")
+        if os.path.exists(build_prop):
+            try:
+                with open(build_prop, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if '=' in line and not line.startswith('#'):
+                            key, value = line.split('=', 1)
+                            key = key.strip()
+                            # Only add build.prop values if not already in source.properties
+                            if key not in info:
+                                info[key] = value.strip()
+            except Exception:
+                pass
+
+        # Try to extract info from folder name if no properties found
+        if not info.get("AndroidVersion") and not info.get("ro.build.version.release"):
+            parts = path.split(os.sep)
+            for part in parts:
+                if part.startswith("android-"):
+                    info["Folder.ApiLevel"] = part.replace("android-", "")
+                elif part in ["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]:
+                    info["Folder.Abi"] = part
+                elif part in ["google_apis", "google_apis_playstore", "default", "aosp"]:
+                    info["Folder.TagId"] = part
+
+        # Check for system.img
+        system_img = os.path.join(path, "system.img")
+        if os.path.exists(system_img):
+            size_mb = os.path.getsize(system_img) / (1024 * 1024)
+            info["system.img"] = f"{size_mb:.1f} MB"
+            info["Status"] = "Ready to use"
+        else:
+            info["Status"] = "Warning: system.img not found"
+
+        info["Path"] = path
+        return info
+
+    def _display_os_info(self, info):
+        """Display OS information in the right panel."""
+        # Clear existing info
+        for child in self._info_box.get_children():
+            self._info_box.remove(child)
+
+        if not info:
+            placeholder = Gtk.Label(label="Select an Android OS to view details")
+            placeholder.set_halign(Gtk.Align.START)
+            placeholder.set_opacity(0.6)
+            self._info_box.pack_start(placeholder, False, False, 0)
+            self._info_box.show_all()
+            return
+
+        # Display order for known keys
+        display_order = [
+            ("AndroidVersion", "Android Version"),
+            ("ro.build.version.release", "Android Version"),
+            ("SystemImage.ApiLevel", "API Level"),
+            ("ro.build.version.sdk", "API Level"),
+            ("SystemImage.Abi", "Architecture (ABI)"),
+            ("ro.product.cpu.abi", "Architecture (ABI)"),
+            ("SystemImage.TagId", "Tag ID"),
+            ("SystemImage.TagDisplay", "Variant"),
+            ("Pkg.Desc", "Description"),
+            ("ro.build.description", "Build Description"),
+            ("ro.build.id", "Build ID"),
+            ("ro.build.version.security_patch", "Security Patch"),
+            ("ro.build.date", "Build Date"),
+            ("SystemImage.Revision", "Revision"),
+            ("Folder.ApiLevel", "API Level (from folder)"),
+            ("Folder.Abi", "Architecture (from folder)"),
+            ("Folder.TagId", "Tag (from folder)"),
+            ("system.img", "System Image Size"),
+            ("Path", "Location"),
+            ("Status", "Status"),
+            ("Parse Error", "Error"),
+        ]
+
+        displayed_keys = set()
+        for key, display_name in display_order:
+            if key in info:
+                self._add_info_row(display_name, info[key])
+                displayed_keys.add(key)
+
+        # Display any remaining keys
+        for key, value in info.items():
+            if key not in displayed_keys:
+                self._add_info_row(key, value)
+
+        self._info_box.show_all()
+
+    def _add_info_row(self, label, value):
+        """Add an info row to the info panel."""
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        label_widget = Gtk.Label(label=f"{label}:")
+        label_widget.set_size_request(140, -1)
+        label_widget.set_halign(Gtk.Align.START)
+        label_widget.set_valign(Gtk.Align.START)
+        label_widget.get_style_context().add_class("dim-label")
+        row.pack_start(label_widget, False, False, 0)
+
+        value_widget = Gtk.Label(label=str(value))
+        value_widget.set_halign(Gtk.Align.START)
+        value_widget.set_line_wrap(True)
+        value_widget.set_selectable(True)
+        row.pack_start(value_widget, True, True, 0)
+
+        self._info_box.pack_start(row, False, False, 0)
 
     def _on_save_clicked(self, button):
         """Handle save button click."""
@@ -329,7 +695,6 @@ class LoadOSPage(PageBase):
             dialog.run()
             dialog.destroy()
             return
-        # Profile saving will be connected to ProfileManager
         print(f"Save profile: {os_name}")
 
     def get_field_values(self):
