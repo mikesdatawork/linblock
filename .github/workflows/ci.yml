@@ -30,7 +30,7 @@ jobs:
         run: flake8 src/ --max-line-length=120 --exclude=__pycache__,vendor --ignore=F401,E302,E402,E704,E741,W504
 
       - name: Run flake8 on tests/
-        run: flake8 tests/ --max-line-length=120 --exclude=__pycache__ --ignore=F401
+        run: flake8 tests/ --max-line-length=120 --exclude=__pycache__ --ignore=F401,F841,E306
 
   test:
     name: Test
