@@ -197,7 +197,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
         api_box.pack_start(rb_vulkan, False, False, 0)
         box1.pack_start(api_box, False, False, 0)
 
-        box1.pack_start(self._make_combo_row("Renderer:", ["auto", "angle", "swiftshader", "native"], "renderer"), False, False, 0)
+        renderer_opts = ["auto", "angle", "swiftshader", "native"]
+        box1.pack_start(self._make_combo_row("Renderer:", renderer_opts, "renderer"), False, False, 0)
 
         exp1.add(box1)
         self._form_box.pack_start(exp1, False, False, 0)
@@ -223,7 +224,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box3.set_margin_top(6)
         box3.set_margin_bottom(6)
 
-        box3.pack_start(self._make_combo_row("Screen Preset:", ["phone", "tablet", "custom"], "screen_preset"), False, False, 0)
+        preset_opts = ["phone", "tablet", "custom"]
+        box3.pack_start(self._make_combo_row("Screen Preset:", preset_opts, "screen_preset"), False, False, 0)
         box3.pack_start(self._make_spin_row("Width (px):", 1080, 240, 3840, "screen_width"), False, False, 0)
         box3.pack_start(self._make_spin_row("Height (px):", 1920, 320, 3840, "screen_height"), False, False, 0)
 
@@ -244,7 +246,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box4.set_margin_bottom(6)
 
         box4.pack_start(self._make_file_row("Shared Folder:", "~/LinBlock/shared", "storage_shared"), False, False, 0)
-        box4.pack_start(self._make_file_row("Screenshot Dir:", "~/LinBlock/screenshots", "storage_screenshots"), False, False, 0)
+        row = self._make_file_row("Screenshot Dir:", "~/LinBlock/screenshots", "storage_screenshots")
+        box4.pack_start(row, False, False, 0)
         box4.pack_start(self._make_file_row("Image Cache:", "~/LinBlock/cache", "storage_cache"), False, False, 0)
 
         exp4.add(box4)
@@ -273,7 +276,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
         box6.pack_start(self._make_check_row("Keyboard-to-touch mapping", True, "input_kbd_touch"), False, False, 0)
         box6.pack_start(self._make_check_row("Gamepad support", False, "input_gamepad"), False, False, 0)
-        box6.pack_start(self._make_combo_row("Mouse Mode:", ["direct", "relative", "touch"], "input_mouse_mode"), False, False, 0)
+        mouse_opts = ["direct", "relative", "touch"]
+        box6.pack_start(self._make_combo_row("Mouse Mode:", mouse_opts, "input_mouse_mode"), False, False, 0)
 
         exp6.add(box6)
         self._form_box.pack_start(exp6, False, False, 0)
@@ -287,7 +291,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
         box7.pack_start(self._make_check_row("Webcam passthrough", False, "cam_webcam"), False, False, 0)
         box7.pack_start(self._make_combo_row("Microphone:", ["default", "none", "virtual"], "cam_mic"), False, False, 0)
-        box7.pack_start(self._make_combo_row("Audio Output:", ["default", "none", "virtual"], "cam_audio"), False, False, 0)
+        audio_opts = ["default", "none", "virtual"]
+        box7.pack_start(self._make_combo_row("Audio Output:", audio_opts, "cam_audio"), False, False, 0)
 
         exp7.add(box7)
         self._form_box.pack_start(exp7, False, False, 0)
@@ -299,8 +304,10 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box8.set_margin_top(6)
         box8.set_margin_bottom(6)
 
-        box8.pack_start(self._make_combo_row("Hypervisor:", ["kvm", "haxm", "software"], "perf_hypervisor"), False, False, 0)
-        box8.pack_start(self._make_combo_row("RAM (MB):", ["2048", "4096", "6144", "8192", "12288", "16384"], "perf_ram"), False, False, 0)
+        hyper_opts = ["kvm", "haxm", "software"]
+        box8.pack_start(self._make_combo_row("Hypervisor:", hyper_opts, "perf_hypervisor"), False, False, 0)
+        ram_opts = ["2048", "4096", "6144", "8192", "12288", "16384"]
+        box8.pack_start(self._make_combo_row("RAM (MB):", ram_opts, "perf_ram"), False, False, 0)
         box8.pack_start(self._make_spin_row("CPU Cores:", 4, 1, 16, "perf_cpu_cores"), False, False, 0)
 
         exp8.add(box8)
