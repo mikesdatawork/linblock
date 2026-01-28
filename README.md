@@ -20,7 +20,7 @@ The system gives users complete control over installed applications, including p
 ## Target System
 
 ```
-OS: Linux Mint 22.2 / Debian-based
+OS: Debian-based distributions (Ubuntu, Linux Mint, Debian, Pop!_OS, etc.)
 CPU: x86_64 (AMD/Intel with virtualization)
 RAM: 12GB minimum
 GPU: AMD/Intel/NVIDIA with OpenGL support
