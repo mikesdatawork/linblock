@@ -45,6 +45,9 @@ venv/
 .coverage
 htmlcov/
 
+# Shell scripts
+*.sh
+
 # Temporary files
 *.tmp
 *.bak
