@@ -54,7 +54,7 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          pytest tests/unit/ \
+          PYTHONPATH=src pytest src/modules/ tests/integration/ \
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
