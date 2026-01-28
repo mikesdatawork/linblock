@@ -1,0 +1,364 @@
+/*
+ * LinBlock Emulator - Dark Theme CSS
+ *
+ * GTK3 CSS for the LinBlock application dashboard.
+ * Based on a dark theme with accent colors for interactive elements.
+ */
+
+/* === Global Window === */
+window {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+}
+
+/* === Sidebar === */
+.sidebar {
+    background-color: #181825;
+    border-right: 1px solid #313244;
+}
+
+.logo-text {
+    font-size: 24px;
+    font-weight: bold;
+    color: #89b4fa;
+    padding: 20px;
+}
+
+/* === Sidebar Buttons === */
+.sidebar-button {
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 10px 16px;
+    color: #bac2de;
+    font-size: 13px;
+    min-height: 32px;
+    transition: background-color 150ms ease;
+}
+
+.sidebar-button:hover {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+.sidebar-button-active {
+    background-color: #45475a;
+    color: #89b4fa;
+    font-weight: bold;
+    border-left: 3px solid #89b4fa;
+}
+
+/* === Content Area === */
+stack {
+    background-color: #1e1e2e;
+}
+
+/* === Scrolled Windows / Pages === */
+scrolledwindow {
+    background-color: #1e1e2e;
+}
+
+/* === Labels === */
+label {
+    color: #cdd6f4;
+}
+
+/* === Section Headers === */
+label.title {
+    color: #89b4fa;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* === Buttons === */
+button {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-height: 24px;
+    transition: background-color 150ms ease;
+}
+
+button:hover {
+    background-color: #45475a;
+    border-color: #585b70;
+}
+
+button:active {
+    background-color: #585b70;
+}
+
+button.suggested-action {
+    background-color: #89b4fa;
+    color: #1e1e2e;
+    border-color: #89b4fa;
+    font-weight: bold;
+}
+
+button.suggested-action:hover {
+    background-color: #74c7ec;
+    border-color: #74c7ec;
+}
+
+button.destructive-action {
+    background-color: #f38ba8;
+    color: #1e1e2e;
+    border-color: #f38ba8;
+}
+
+button.destructive-action:hover {
+    background-color: #eba0ac;
+    border-color: #eba0ac;
+}
+
+/* === Device Control Buttons === */
+.device-button {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 28px;
+    font-size: 11px;
+}
+
+.device-button:hover {
+    background-color: #45475a;
+}
+
+/* === Device Controls Panel === */
+.device-controls {
+    background-color: #181825;
+    border-right: 1px solid #313244;
+}
+
+/* === Entries === */
+entry {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 6px 8px;
+    min-height: 24px;
+    caret-color: #89b4fa;
+}
+
+entry:focus {
+    border-color: #89b4fa;
+    box-shadow: 0 0 0 1px #89b4fa;
+}
+
+entry selection {
+    background-color: #89b4fa;
+    color: #1e1e2e;
+}
+
+/* === Spin Buttons === */
+spinbutton {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+}
+
+spinbutton entry {
+    border: none;
+}
+
+spinbutton button {
+    background-color: #45475a;
+    border: none;
+    border-radius: 0;
+    min-width: 24px;
+}
+
+spinbutton button:hover {
+    background-color: #585b70;
+}
+
+/* === Combo Boxes === */
+combobox button {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+}
+
+combobox button:hover {
+    background-color: #45475a;
+}
+
+/* === Check Buttons === */
+checkbutton {
+    color: #cdd6f4;
+}
+
+checkbutton check {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    min-width: 18px;
+    min-height: 18px;
+}
+
+checkbutton check:checked {
+    background-color: #89b4fa;
+    border-color: #89b4fa;
+    color: #1e1e2e;
+}
+
+checkbutton check:hover {
+    border-color: #89b4fa;
+}
+
+/* === Radio Buttons === */
+radiobutton {
+    color: #cdd6f4;
+}
+
+radiobutton radio {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    min-width: 18px;
+    min-height: 18px;
+}
+
+radiobutton radio:checked {
+    background-color: #89b4fa;
+    border-color: #89b4fa;
+}
+
+/* === Switches === */
+switch {
+    background-color: #45475a;
+    border-radius: 12px;
+    min-width: 40px;
+    min-height: 20px;
+}
+
+switch:checked {
+    background-color: #89b4fa;
+}
+
+switch slider {
+    background-color: #cdd6f4;
+    border-radius: 50%;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+/* === Scales === */
+scale trough {
+    background-color: #313244;
+    border-radius: 4px;
+    min-height: 6px;
+}
+
+scale highlight {
+    background-color: #89b4fa;
+    border-radius: 4px;
+}
+
+scale slider {
+    background-color: #cdd6f4;
+    border: 2px solid #89b4fa;
+    border-radius: 50%;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+/* === Level Bars === */
+levelbar trough {
+    background-color: #313244;
+    border-radius: 4px;
+    min-height: 8px;
+}
+
+levelbar block.filled {
+    background-color: #a6e3a1;
+    border-radius: 4px;
+}
+
+levelbar block.empty {
+    background-color: #45475a;
+}
+
+/* === Expanders === */
+expander title {
+    color: #89b4fa;
+    font-weight: bold;
+    padding: 6px 0;
+}
+
+expander arrow {
+    color: #89b4fa;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+/* === Separators === */
+separator {
+    background-color: #313244;
+    min-height: 1px;
+    min-width: 1px;
+}
+
+/* === Tree View === */
+treeview {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+}
+
+treeview:selected {
+    background-color: #45475a;
+    color: #89b4fa;
+}
+
+treeview header button {
+    background-color: #181825;
+    color: #a6adc8;
+    border-bottom: 1px solid #313244;
+    font-weight: bold;
+    padding: 4px 8px;
+}
+
+/* === Scrollbars === */
+scrollbar {
+    background-color: transparent;
+}
+
+scrollbar slider {
+    background-color: #45475a;
+    border-radius: 4px;
+    min-width: 6px;
+    min-height: 6px;
+}
+
+scrollbar slider:hover {
+    background-color: #585b70;
+}
+
+/* === Tooltips === */
+tooltip {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+/* === Dialog === */
+messagedialog {
+    background-color: #1e1e2e;
+}
+
+messagedialog .dialog-action-area button {
+    min-width: 80px;
+}
+
+/* === File Chooser === */
+filechooser {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+}

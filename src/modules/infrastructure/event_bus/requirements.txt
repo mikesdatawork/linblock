@@ -1,0 +1,2 @@
+# Module dependencies for event_bus
+# Add dependencies here, one per line

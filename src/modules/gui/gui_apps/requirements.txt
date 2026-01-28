@@ -1,0 +1,2 @@
+# Module dependencies for gui_apps
+# Add dependencies here, one per line

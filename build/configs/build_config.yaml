@@ -1,0 +1,145 @@
+# build_config.yaml - LinBlock build configuration
+#
+# This file defines the build process parameters including layer order,
+# coverage thresholds, lint settings, and other build-time configuration.
+
+# Project metadata
+project:
+  name: LinBlock
+  version: 0.1.0
+  python_version: ">=3.10"
+
+# Layer build configuration
+layers:
+  # Build order matters: earlier layers are built first.
+  # Each layer may depend on layers listed before it, but not after.
+  build_order:
+    - infrastructure
+    - emulation
+    - android
+    - gui
+
+  # Layer dependency rules (enforced by check_dependencies.sh)
+  dependencies:
+    infrastructure: []
+    emulation:
+      - infrastructure
+    android:
+      - infrastructure
+      - emulation
+    gui:
+      - infrastructure
+      - emulation
+      - android
+
+# Code coverage settings
+coverage:
+  # Minimum coverage percentage required to pass
+  minimum_threshold: 80
+
+  # Coverage report formats to generate
+  report_formats:
+    - term-missing
+    - html
+    - xml
+
+  # HTML report output directory
+  html_report_dir: build/reports/coverage
+
+  # Files/patterns to exclude from coverage
+  exclude_patterns:
+    - "*/tests/*"
+    - "*/__pycache__/*"
+    - "*/migrations/*"
+    - "*_pb2.py"
+    - "*/conftest.py"
+
+# Linting settings
+lint:
+  # Maximum line length for flake8
+  max_line_length: 100
+
+  # flake8 error codes to ignore
+  ignore:
+    - E501  # Line too long (handled by max_line_length)
+    - W503  # Line break before binary operator
+    - E203  # Whitespace before ':' (conflicts with black)
+
+  # Directories to exclude from linting
+  exclude:
+    - __pycache__
+    - .git
+    - "*.egg-info"
+    - build
+    - dist
+    - venv
+    - .venv
+
+  # Additional flake8 plugins to run (if installed)
+  plugins:
+    - flake8-bugbear
+    - flake8-comprehensions
+
+# Testing settings
+test:
+  # pytest options
+  pytest_args:
+    - "-v"
+    - "--tb=short"
+    - "--strict-markers"
+
+  # Test timeout (seconds) per test function
+  timeout: 30
+
+  # Markers for selective test runs
+  markers:
+    - "unit: Unit tests (fast, no external dependencies)"
+    - "integration: Integration tests (may require system resources)"
+    - "slow: Tests that take more than 10 seconds"
+    - "kvm: Tests that require KVM access"
+
+# Type checking settings (mypy)
+type_check:
+  enabled: true
+  strict: false
+  python_version: "3.10"
+  ignore_missing_imports: true
+  warn_return_any: true
+  warn_unused_configs: true
+
+# Build output settings
+output:
+  # Directory for build artifacts
+  artifacts_dir: build/artifacts
+
+  # Directory for test reports
+  reports_dir: build/reports
+
+  # Directory for distribution packages
+  dist_dir: dist
+
+# Environment-specific overrides
+environments:
+  development:
+    coverage:
+      minimum_threshold: 60
+    lint:
+      max_line_length: 120
+
+  ci:
+    coverage:
+      minimum_threshold: 80
+      report_formats:
+        - xml
+        - html
+    test:
+      pytest_args:
+        - "-v"
+        - "--tb=long"
+        - "--junitxml=build/reports/junit.xml"
+
+  production:
+    coverage:
+      minimum_threshold: 90
+    type_check:
+      strict: true

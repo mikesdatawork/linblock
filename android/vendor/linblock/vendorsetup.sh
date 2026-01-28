@@ -1,0 +1,3 @@
+add_lunch_combo linblock_x86_64-userdebug
+add_lunch_combo linblock_x86_64-user
+add_lunch_combo linblock_x86_64-eng

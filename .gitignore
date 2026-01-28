@@ -45,8 +45,11 @@ venv/
 .coverage
 htmlcov/
 
-# Shell scripts
-*.sh
+# Root scaffolding scripts (one-time use)
+/s0*.sh
+
+# Vendor cloned repos
+vendor/
 
 # Temporary files
 *.tmp

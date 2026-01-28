@@ -1,0 +1,2 @@
+# Module dependencies for input_manager
+# Add dependencies here, one per line

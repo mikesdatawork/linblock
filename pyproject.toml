@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "linblock"
+version = "0.1.0"
+description = "Custom Android emulator with minimal secure Android OS"
+readme = "README.md"
+license = {text = "TBD"}
+requires-python = ">=3.10"
+authors = [
+    {name = "LinBlock Team"}
+]
+
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PyGObject>=3.42",
+    "pycairo>=1.20",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src/modules"]
+python_files = ["test_*.py", "benchmark_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests",
+    "performance: marks performance benchmarks",
+    "security: marks security tests",
+]
+
+[tool.flake8]
+max-line-length = 100
+exclude = ["__pycache__", ".git", "venv", "build/output", "vendor"]
+
+[tool.mypy]
+ignore_missing_imports = true

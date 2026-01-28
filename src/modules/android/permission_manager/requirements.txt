@@ -1,0 +1,2 @@
+# Module dependencies for permission_manager
+# Add dependencies here, one per line
