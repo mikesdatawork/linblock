@@ -1,0 +1,137 @@
+name: LinBlock CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 mypy
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Run flake8 on src/
+        run: flake8 src/ --max-line-length=120 --exclude=__pycache__,vendor
+
+      - name: Run flake8 on tests/
+        run: flake8 tests/ --max-line-length=120 --exclude=__pycache__
+
+  test:
+    name: Test
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-mock
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/unit/ \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            -v
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 14
+
+  import-check:
+    name: Import Check
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+
+      - name: Verify layer __init__.py imports
+        run: |
+          echo "Verifying module imports..."
+          python -c "
+          import sys
+          sys.path.insert(0, 'src')
+
+          errors = []
+
+          # Check infrastructure layer
+          try:
+              import modules.infrastructure
+              print('OK: modules.infrastructure')
+          except ImportError as e:
+              errors.append(f'modules.infrastructure: {e}')
+
+          # Check emulation layer
+          try:
+              import modules.emulation
+              print('OK: modules.emulation')
+          except ImportError as e:
+              errors.append(f'modules.emulation: {e}')
+
+          # Check android layer
+          try:
+              import modules.android
+              print('OK: modules.android')
+          except ImportError as e:
+              errors.append(f'modules.android: {e}')
+
+          # Check gui layer
+          try:
+              import modules.gui
+              print('OK: modules.gui')
+          except ImportError as e:
+              errors.append(f'modules.gui: {e}')
+
+          if errors:
+              print('\nImport errors found:')
+              for err in errors:
+                  print(f'  FAIL: {err}')
+              sys.exit(1)
+          else:
+              print('\nAll layer imports successful.')
+          "
