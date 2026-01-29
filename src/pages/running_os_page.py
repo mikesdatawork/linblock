@@ -14,6 +14,10 @@ class RunningOSPage(Gtk.Box):
     """Page displayed when an OS profile is running.
 
     Horizontal layout: DeviceControlsPanel (180px fixed) + EmulatorDisplay (fill).
+
+    Supports two display modes:
+    1. Direct frame callback - uses emulator's frame callback
+    2. Shared memory - uses GPU renderer's SharedMemoryFrameSource for better performance
     """
 
     def __init__(self, profile_name=""):
@@ -22,6 +26,8 @@ class RunningOSPage(Gtk.Box):
         self._profile_dict = None
         self._emulator = None
         self._emulator_initialized = False
+        self._gpu_renderer = None
+        self._frame_source = None
 
         # Add padding around the entire page
         self.set_margin_start(16)
@@ -114,6 +120,9 @@ class RunningOSPage(Gtk.Box):
 
             self._emulator_initialized = True
 
+            # Initialize GPU renderer for hardware-accelerated display
+            self._init_gpu_renderer(device, graphics)
+
             # Update display with configured resolution
             self.display.set_resolution(
                 device.get("screen_width", 1080),
@@ -122,6 +131,52 @@ class RunningOSPage(Gtk.Box):
 
         except Exception as e:
             self._show_error(f"Failed to initialize emulator: {e}")
+
+    def _init_gpu_renderer(self, device, graphics):
+        """Initialize GPU renderer and shared memory frame source."""
+        try:
+            from modules.emulation.gpu_renderer import create_interface as create_gpu_renderer
+
+            gpu_mode = graphics.get("gpu_mode", "host")
+
+            # Create GPU renderer config
+            gpu_config = {
+                "backend": "stub" if gpu_mode == "software" else "native",
+                "width": device.get("screen_width", 1080),
+                "height": device.get("screen_height", 1920),
+                "use_sandbox": True,
+            }
+
+            self._gpu_renderer = create_gpu_renderer(gpu_config)
+            self._gpu_renderer.initialize()
+
+            # If renderer has shared memory, set up frame source
+            if hasattr(self._gpu_renderer, 'get_shm_name'):
+                shm_name = self._gpu_renderer.get_shm_name()
+                if shm_name:
+                    self._setup_shared_memory_display(shm_name)
+
+        except Exception as e:
+            # GPU renderer is optional - log and continue
+            print(f"GPU renderer initialization failed (using fallback): {e}")
+
+    def _setup_shared_memory_display(self, shm_name):
+        """Set up shared memory frame source for display."""
+        try:
+            from modules.emulation.gpu_renderer.gtk_integration import SharedMemoryFrameSource
+
+            self._frame_source = SharedMemoryFrameSource(shm_name, target_fps=60)
+            self._frame_source.attach(self.display)
+            self._frame_source.set_frame_callback(self._on_shm_frame)
+
+        except Exception as e:
+            print(f"Shared memory display setup failed: {e}")
+
+    def _on_shm_frame(self, frame_number, width, height):
+        """Handle frame delivered from shared memory."""
+        # Frame is already sent to display via SharedMemoryFrameSource
+        # This callback is for additional processing if needed
+        pass
 
     def _on_power_toggled(self, switch, pspec):
         """Handle power switch toggle."""
@@ -154,6 +209,10 @@ class RunningOSPage(Gtk.Box):
             # Start emulator (this may take a moment)
             self._emulator.start()
 
+            # Start frame source if using shared memory
+            if self._frame_source:
+                self._frame_source.start()
+
         except Exception as e:
             self._show_error(f"Failed to start emulator: {e}")
             # Reset power switch
@@ -168,6 +227,10 @@ class RunningOSPage(Gtk.Box):
 
         try:
             from modules.emulation.emulator_core.interface import VMState
+
+            # Stop frame source first
+            if self._frame_source:
+                self._frame_source.stop()
 
             state = self._emulator.get_state()
             if state == VMState.STOPPED:
@@ -246,11 +309,29 @@ class RunningOSPage(Gtk.Box):
         return self._profile_name
 
     def cleanup(self):
-        """Clean up emulator resources."""
+        """Clean up emulator and GPU renderer resources."""
+        # Stop frame source first
+        if self._frame_source:
+            try:
+                self._frame_source.stop()
+            except Exception:
+                pass
+            self._frame_source = None
+
+        # Clean up GPU renderer
+        if self._gpu_renderer:
+            try:
+                self._gpu_renderer.cleanup()
+            except Exception:
+                pass
+            self._gpu_renderer = None
+
+        # Clean up emulator
         if self._emulator:
             try:
                 self._emulator.cleanup()
             except Exception:
                 pass
             self._emulator = None
+
         self._emulator_initialized = False

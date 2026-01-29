@@ -40,6 +40,9 @@ class QEMUConfig:
     userdata_image: Optional[str] = None
     cache_image: Optional[str] = None
 
+    # GPU command pipe (for hardware-accelerated rendering)
+    gpu_pipe_socket: Optional[str] = None  # Path to GPU pipe socket
+
     # Advanced options
     extra_args: List[str] = field(default_factory=list)
 
@@ -162,6 +165,14 @@ class QEMUProcess:
             cmd.extend(["-device", "virtio-gpu-pci"])
         else:
             cmd.extend(["-device", "VGA"])
+
+        # GPU command pipe (virtio-serial for GPU command transport)
+        if self._config.gpu_pipe_socket:
+            cmd.extend([
+                "-device", "virtio-serial",
+                "-chardev", f"socket,path={self._config.gpu_pipe_socket},server=on,wait=off,id=gpu_chardev",
+                "-device", "virtserialport,chardev=gpu_chardev,name=gpu_pipe",
+            ])
 
         # Network with ADB port forwarding
         cmd.extend([
@@ -312,7 +323,18 @@ class QEMUProcess:
         """Get the VNC server address for this instance."""
         return f"localhost:{self._config.vnc_port}"
 
+    def get_gpu_pipe_socket(self) -> Optional[str]:
+        """Get the GPU command pipe socket path."""
+        return self._config.gpu_pipe_socket
+
     def cleanup(self) -> None:
         """Clean up all resources."""
         self.force_stop()
         self._state_callbacks.clear()
+
+        # Clean up GPU pipe socket if we created it
+        if self._config.gpu_pipe_socket and os.path.exists(self._config.gpu_pipe_socket):
+            try:
+                os.unlink(self._config.gpu_pipe_socket)
+            except Exception:
+                pass

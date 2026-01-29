@@ -266,17 +266,26 @@ class StubGPURenderer(GPURendererInterface):
         if callback in self._frame_callbacks:
             self._frame_callbacks.remove(callback)
 
+    def get_shm_name(self) -> Optional[str]:
+        """Get the shared memory name (stub returns None)."""
+        return None
+
     def cleanup(self) -> None:
         self._state = RendererState.UNINITIALIZED
         self._frame_callbacks.clear()
 
 
 # -----------------------------------------------------------------------------
-# Native Implementation (uses libOpenglRender)
+# Native Implementation (uses libOpenglRender via sandboxed process)
 # -----------------------------------------------------------------------------
 
 class NativeGPURenderer(GPURendererInterface):
-    """Native implementation using libOpenglRender library."""
+    """
+    Native implementation using libOpenglRender library.
+
+    Uses a sandboxed subprocess (RendererProcess) to host the GPU renderer,
+    communicating via Unix socket and shared memory for security isolation.
+    """
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self._config = RendererConfig(
@@ -286,11 +295,11 @@ class NativeGPURenderer(GPURendererInterface):
             use_software_renderer=config.get("use_software_renderer", False),
         )
         self._state = RendererState.UNINITIALIZED
-        self._lib = None
-        self._context = None
+        self._process = None  # RendererProcess instance
         self._frame_count = 0
         self._frame_callbacks: List[Callable[[FrameData], None]] = []
         self._error_message = ""
+        self._use_sandbox = config.get("use_sandbox", True)
 
     def _find_library(self) -> str:
         """Find libOpenglRender.so library."""
@@ -316,90 +325,84 @@ class NativeGPURenderer(GPURendererInterface):
         return ""
 
     def initialize(self) -> None:
+        from .internal.renderer_process import RendererProcess, RendererProcessConfig
+
         self._state = RendererState.INITIALIZING
 
-        lib_path = self._find_library()
-        if not lib_path:
-            self._error_message = "libOpenglRender.so not found"
-            self._state = RendererState.ERROR
-            raise RendererInitError(self._error_message)
-
         try:
-            self._lib = ctypes.CDLL(lib_path)
-
-            # Set up function signatures
-            self._lib.lb_renderer_init.argtypes = [
-                ctypes.c_uint32, ctypes.c_uint32,
-                ctypes.POINTER(ctypes.c_void_p)
-            ]
-            self._lib.lb_renderer_init.restype = ctypes.c_int
-
-            self._lib.lb_renderer_process_commands.argtypes = [
-                ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t
-            ]
-            self._lib.lb_renderer_process_commands.restype = ctypes.c_int
-
-            self._lib.lb_renderer_cleanup.argtypes = [ctypes.c_void_p]
-            self._lib.lb_renderer_cleanup.restype = None
-
-            # Initialize renderer
-            context = ctypes.c_void_p()
-            result = self._lib.lb_renderer_init(
-                self._config.width,
-                self._config.height,
-                ctypes.byref(context)
+            # Create renderer process configuration
+            process_config = RendererProcessConfig(
+                width=self._config.width,
+                height=self._config.height,
+                library_path=self._find_library(),
+                use_sandbox=self._use_sandbox,
             )
 
-            if result != 0:
-                self._error_message = f"Renderer init failed with code {result}"
-                self._state = RendererState.ERROR
-                raise RendererInitError(self._error_message)
+            # Create and start renderer process
+            self._process = RendererProcess(process_config)
+            self._process.start()
 
-            self._context = context
             self._state = RendererState.READY
 
-        except OSError as e:
-            self._error_message = f"Failed to load library: {e}"
+        except Exception as e:
+            self._error_message = str(e)
             self._state = RendererState.ERROR
             raise RendererInitError(self._error_message)
 
     def process_commands(self, command_buffer: bytes) -> None:
-        if self._state != RendererState.READY or not self._lib or not self._context:
+        if self._state != RendererState.READY or not self._process:
             raise RendererNotReadyError("Renderer not initialized")
 
-        cmd_ptr = ctypes.c_char_p(command_buffer)
-        result = self._lib.lb_renderer_process_commands(
-            self._context, cmd_ptr, len(command_buffer)
-        )
-
-        if result != 0:
-            raise GPURendererError(f"Process commands failed: {result}")
-
+        self._process.process_commands(command_buffer)
         self._frame_count += 1
 
     def get_frame(self) -> Optional[FrameData]:
-        if self._state != RendererState.READY:
+        """Get frame from shared memory.
+
+        Note: For GTK integration, use SharedMemoryFrameSource instead
+        of polling this method directly for better performance.
+        """
+        if self._state != RendererState.READY or not self._process:
             return None
 
-        # TODO: Implement frame retrieval from native library
-        # This requires the lb_renderer_get_frame function
+        # Read from shared memory
+        from .internal.shm_display import SharedMemoryDisplay
+
+        try:
+            shm = SharedMemoryDisplay(self._process.get_shm_name())
+            shm.open()
+            result = shm.read_frame()
+            shm.cleanup()
+
+            if result:
+                width, height, frame_number, timestamp_ns, pixels = result
+                return FrameData(
+                    width=width,
+                    height=height,
+                    stride=width * 4,
+                    format=FrameFormat.BGRA8888,
+                    frame_number=frame_number,
+                    timestamp_ns=timestamp_ns,
+                    data=pixels,
+                )
+        except Exception:
+            pass
+
         return None
 
     def resize(self, width: int, height: int) -> None:
         self._config.width = width
         self._config.height = height
 
-        if self._lib and self._context:
-            if hasattr(self._lib, 'lb_renderer_resize'):
-                self._lib.lb_renderer_resize(self._context, width, height)
+        if self._process:
+            self._process.resize(width, height)
 
     def set_rotation(self, degrees: int) -> None:
         if degrees not in (0, 90, 180, 270):
             raise GPURendererError(f"Invalid rotation: {degrees}")
 
-        if self._lib and self._context:
-            if hasattr(self._lib, 'lb_renderer_set_rotation'):
-                self._lib.lb_renderer_set_rotation(self._context, degrees)
+        if self._process:
+            self._process.set_rotation(degrees)
 
     def get_state(self) -> RendererState:
         return self._state
@@ -410,8 +413,8 @@ class NativeGPURenderer(GPURendererInterface):
             width=self._config.width,
             height=self._config.height,
             frames_rendered=self._frame_count,
-            gpu_vendor="",  # TODO: Query from library
-            gl_version="",  # TODO: Query from library
+            gpu_vendor="",  # TODO: Query from process
+            gl_version="",  # TODO: Query from process
             error_message=self._error_message,
         )
 
@@ -422,12 +425,17 @@ class NativeGPURenderer(GPURendererInterface):
         if callback in self._frame_callbacks:
             self._frame_callbacks.remove(callback)
 
-    def cleanup(self) -> None:
-        if self._lib and self._context:
-            self._lib.lb_renderer_cleanup(self._context)
-            self._context = None
+    def get_shm_name(self) -> Optional[str]:
+        """Get the shared memory name for GTK integration."""
+        if self._process:
+            return self._process.get_shm_name()
+        return None
 
-        self._lib = None
+    def cleanup(self) -> None:
+        if self._process:
+            self._process.cleanup()
+            self._process = None
+
         self._state = RendererState.UNINITIALIZED
         self._frame_callbacks.clear()
 
