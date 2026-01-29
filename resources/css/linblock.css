@@ -160,8 +160,8 @@ button.destructive-action:hover {
 
 /* === Device Controls Panel === */
 .device-controls {
-    background-color: #181825;
-    border-right: 1px solid #313244;
+    background-color: #1e1e2e;
+    border-right: none;
 }
 
 /* === Entries - No Rounded Corners === */
@@ -274,41 +274,33 @@ radiobutton radio:checked {
 
 /* === Switches === */
 switch {
-    background-color: #45475a;
-    border-radius: 0;
-    min-width: 40px;
-    min-height: 20px;
+    /* Standard GTK3 toggle */
 }
 
-switch:checked {
-    background-color: #89b4fa;
-}
-
-switch slider {
-    background-color: #cdd6f4;
-    border-radius: 0;
-    min-width: 16px;
-    min-height: 16px;
-}
-
-/* === Scales === */
+/* === Scales - Thin track with circular handles === */
 scale trough {
     background-color: #313244;
-    border-radius: 0;
-    min-height: 6px;
+    border-radius: 2px;
+    min-height: 4px;
 }
 
 scale highlight {
     background-color: #89b4fa;
-    border-radius: 0;
+    border-radius: 2px;
 }
 
 scale slider {
     background-color: #cdd6f4;
-    border: 2px solid #89b4fa;
-    border-radius: 0;
-    min-width: 16px;
-    min-height: 16px;
+    border: none;
+    border-radius: 50%;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -5px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+scale slider:hover {
+    background-color: #ffffff;
 }
 
 /* === Level Bars === */

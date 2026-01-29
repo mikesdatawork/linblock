@@ -18,6 +18,13 @@ class RunningOSPage(Gtk.Box):
     def __init__(self, profile_name=""):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self._profile_name = profile_name
+
+        # Add padding around the entire page
+        self.set_margin_start(16)
+        self.set_margin_end(16)
+        self.set_margin_top(16)
+        self.set_margin_bottom(16)
+
         self._build_ui()
 
     def _build_ui(self):
@@ -26,8 +33,10 @@ class RunningOSPage(Gtk.Box):
         self.controls.set_size_request(180, -1)
         self.pack_start(self.controls, False, False, 0)
 
-        # Separator
+        # Separator with margin
         sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        sep.set_margin_start(8)
+        sep.set_margin_end(8)
         self.pack_start(sep, False, False, 0)
 
         # Right area: emulator display

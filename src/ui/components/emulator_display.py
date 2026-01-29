@@ -29,23 +29,31 @@ class EmulatorDisplay(Gtk.DrawingArea):
 
     def _on_draw(self, widget, cr):
         alloc = self.get_allocation()
-        # Draw placeholder background
-        cr.set_source_rgb(0.1, 0.1, 0.1)
+
+        # Draw background matching app theme (#1e1e2e)
+        cr.set_source_rgb(0.118, 0.118, 0.180)
         cr.rectangle(0, 0, alloc.width, alloc.height)
         cr.fill()
 
-        # Draw phone outline
+        # Draw phone outline (darker than background)
         phone_w = int(self._display_width * self._scale)
         phone_h = int(self._display_height * self._scale)
         x = (alloc.width - phone_w) // 2
         y = (alloc.height - phone_h) // 2
 
-        cr.set_source_rgb(0.2, 0.2, 0.2)
+        # Phone screen area (#181825 - sidebar color)
+        cr.set_source_rgb(0.094, 0.094, 0.145)
         cr.rectangle(x, y, phone_w, phone_h)
         cr.fill()
 
+        # Phone border (#313244)
+        cr.set_source_rgb(0.192, 0.196, 0.267)
+        cr.set_line_width(2)
+        cr.rectangle(x, y, phone_w, phone_h)
+        cr.stroke()
+
         # Placeholder text
-        cr.set_source_rgb(0.5, 0.5, 0.5)
+        cr.set_source_rgb(0.651, 0.706, 0.957)  # #a6adc8 dim-label color
         cr.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(14)
         text = "Android Display"
