@@ -30,6 +30,10 @@
 | R008 | AOSP build requires more than 16 GB RAM, exceeding available resources on developer machines                                          | H    | M      | 1. Use swap space (32 GB swap file). 2. Limit build parallelism (`-j2`). 3. Provision a dedicated build server or use cloud CI with 32 GB+ RAM. 4. Use prebuilt AOSP images for development. | Agent 004 | Open   |
 | R009 | Input latency exceeds 50 ms, making the Android UI feel unresponsive                                                                  | M    | M      | 1. Inject input events directly via virtio-input (bypass ADB). 2. Minimize buffering layers between GTK event and guest injection. 3. Profile and measure latency at each stage of the pipeline. | Agent 003 | Open   |
 | R010 | Module integration issues: incompatible interfaces between emulator_core, gui_shell, permission_manager, and other modules             | M    | M      | 1. Define strict interface contracts (Python ABCs / Protocols) before implementation begins. 2. Integration tests run in CI on every merge. 3. Weekly integration checkpoint meetings.      | Agent 001 | Open   |
+| R011 | Android Emulator fork: GPU translation layer (libOpenglRender) vulnerabilities enable VM escape via malicious shaders or OpenGL commands | M    | H      | 1. Fuzz libOpenglRender command parser before release. 2. Validate shader complexity before compilation. 3. Run GPU renderer in separate sandboxed process. 4. Consider SwiftShader fallback. | Agent 005 | Open   |
+| R012 | Android Emulator fork: Supply chain risk from Google codebase changes, delayed patches, or abandonment                                   | M    | H      | 1. Pin to specific commit hashes. 2. Verify GPG signatures. 3. Generate SBOM on sync. 4. Monthly sync cadence with security bulletin monitoring. 5. Document backporting process.            | Agent 005 | Open   |
+| R013 | Android Emulator fork: Increased attack surface (+36% LOC) compared to raw QEMU requires additional sandboxing effort                    | H    | M      | 1. Mandatory seccomp-bpf filter. 2. Mandatory namespace isolation. 3. Mandatory cgroup limits. 4. AppArmor profile. 5. Security review gates in CI.                                          | Agent 005 | Open   |
+| R014 | Android Emulator fork: Security patch maintenance burden (~16-32 hours/month) may exceed team capacity                                   | M    | M      | 1. Dedicate security maintenance rotation. 2. Automate CVE monitoring. 3. Define clear triage process. 4. Consider abandoning fork if burden becomes unsustainable.                          | Agent 001 | Open   |
 
 ---
 
@@ -38,6 +42,7 @@
 | Date       | Risk ID | Action Taken                                    | Result          |
 |------------|---------|-------------------------------------------------|-----------------|
 | 2026-01-28 | ALL     | Initial risk identification and documentation   | Register created |
+| 2026-01-29 | R011-R014 | Security evaluation of Android Emulator fork completed. See `docs/security/android_emulator_fork_evaluation.md` | Risks documented |
 
 ---
 
@@ -62,3 +67,4 @@ A risk is escalated to the full team when:
 | Date       | Author    | Change                          |
 |------------|-----------|---------------------------------|
 | 2026-01-28 | Agent 001 | Initial risk register creation  |
+| 2026-01-29 | Agent 005 | Added R011-R014 for Android Emulator fork security risks |
