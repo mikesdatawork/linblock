@@ -76,6 +76,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._load_os_page.set_on_profile_saved(self._on_profile_saved)
         self._os_list_page.set_on_launch(self._on_profile_launch)
         self._os_list_page.set_on_edit(self._on_profile_edit)
+        self._os_list_page.set_on_delete(self._on_profile_deleted)
 
     def _load_saved_profiles(self):
         """Load saved profiles and add them to the sidebar."""
@@ -119,6 +120,10 @@ class MainWindow(Gtk.ApplicationWindow):
         """Called when Edit button is clicked in OS List page."""
         # TODO: Navigate to Load OS page with profile pre-filled
         self.content.show_page("load_os")
+
+    def _on_profile_deleted(self, profile_name):
+        """Called when a profile is deleted from OS List page."""
+        self._remove_profile_from_sidebar(profile_name)
 
     def _launch_profile_by_name(self, profile_name):
         """Launch a profile by its name."""

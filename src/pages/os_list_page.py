@@ -135,6 +135,7 @@ class OSListPage(Gtk.ScrolledWindow):
         self._profile_cards = {}
         self._on_launch_callback = None
         self._on_edit_callback = None
+        self._on_delete_callback = None
         self._build_content()
 
     def _build_content(self):
@@ -195,6 +196,10 @@ class OSListPage(Gtk.ScrolledWindow):
     def set_on_edit(self, callback):
         """Set callback for when Edit button is clicked."""
         self._on_edit_callback = callback
+
+    def set_on_delete(self, callback):
+        """Set callback for when a profile is deleted."""
+        self._on_delete_callback = callback
 
     def refresh_profiles(self):
         """Reload profiles from disk and refresh the display."""
@@ -298,6 +303,9 @@ class OSListPage(Gtk.ScrolledWindow):
             try:
                 self._profile_manager.delete_profile(profile.name)
                 self.remove_profile(profile.name)
+                # Notify main window to remove sidebar button
+                if self._on_delete_callback:
+                    self._on_delete_callback(profile.name)
             except Exception as e:
                 error_dialog = Gtk.MessageDialog(
                     transient_for=self.get_toplevel(),

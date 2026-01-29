@@ -34,7 +34,7 @@ class Sidebar(Gtk.Box):
         self.pack_start(logo_frame, False, False, 0)
 
         # Static buttons
-        for name, label in [("about", "About"), ("load_os", "Load OS"), ("os_list", "OS List")]:
+        for name, label in [("about", "About"), ("load_os", "Load OS"), ("os_list", "Profiles")]:
             btn = Gtk.Button(label=label)
             btn.get_style_context().add_class("sidebar-button")
             btn.connect("clicked", self._on_button_clicked, name)

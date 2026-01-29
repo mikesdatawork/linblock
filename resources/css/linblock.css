@@ -36,8 +36,7 @@ window {
 .sidebar-button:hover,
 .sidebar-button:active,
 .sidebar-button:focus,
-.sidebar-button:checked,
-.sidebar-button-active {
+.sidebar-button:checked {
     background: transparent;
     background-color: transparent;
     background-image: none;
@@ -61,9 +60,12 @@ window {
     color: #cdd6f4;
 }
 
-.sidebar-button-active {
+.sidebar-button.sidebar-button-active,
+.sidebar-button.sidebar-button-active:hover,
+.sidebar-button.sidebar-button-active:focus {
     background: #45475a;
     background-color: #45475a;
+    background-image: none;
     color: #89b4fa;
     font-weight: bold;
     border-left: 3px solid #89b4fa;
