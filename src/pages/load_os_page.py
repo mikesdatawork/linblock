@@ -4,18 +4,21 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib
 import os
-import configparser
+import sys
+from datetime import datetime
+
+# Add parent to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.os_profile import OSProfile
+from utils.profile_manager import ProfileManager
 
 
-# Default Android images directory (relative to project root)
 def _get_default_images_dir():
     """Get the default android-images directory path."""
-    # Try relative to this file first (for installed app)
     base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     images_dir = os.path.join(base, "android-images")
     if os.path.isdir(images_dir):
         return images_dir
-    # Fallback to user config directory
     return os.path.expanduser("~/.linblock/android-images")
 
 
@@ -28,29 +31,39 @@ class LoadOSPage(Gtk.ScrolledWindow):
         self._fields = {}
         self._os_info = {}
         self._images_dir = _get_default_images_dir()
+        self._profile_manager = ProfileManager()
+        self._current_image_path = None
         self._build_content()
 
     def _build_content(self):
-        # Main horizontal paned layout (left form, right info panel)
-        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        main_box.set_margin_start(20)
-        main_box.set_margin_end(20)
-        main_box.set_margin_top(20)
-        main_box.set_margin_bottom(20)
+        # Use Paned for adjustable center margin
+        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        paned.set_wide_handle(True)
+        paned.set_margin_start(20)
+        paned.set_margin_end(20)
+        paned.set_margin_top(20)
+        paned.set_margin_bottom(20)
 
-        # Left side: Form (half width)
+        # Left side: Form
         left_scroll = Gtk.ScrolledWindow()
         left_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        left_scroll.set_size_request(450, -1)
+        left_scroll.set_min_content_width(400)
 
         self._form_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self._form_box.set_margin_end(20)
+        self._form_box.set_margin_end(10)
         left_scroll.add(self._form_box)
 
-        # Right side: OS Info Panel
+        # Right side: OS Info Panel with proper padding
+        right_frame = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        right_frame.set_margin_start(10)
+
         right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        right_box.set_size_request(350, -1)
+        right_box.set_size_request(300, -1)
         right_box.get_style_context().add_class("os-info-panel")
+        right_box.set_margin_start(16)
+        right_box.set_margin_end(16)
+        right_box.set_margin_top(16)
+        right_box.set_margin_bottom(16)
 
         info_label = Gtk.Label()
         info_label.set_markup("<b>Android OS Information</b>")
@@ -58,21 +71,24 @@ class LoadOSPage(Gtk.ScrolledWindow):
         right_box.pack_start(info_label, False, False, 0)
 
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        right_box.pack_start(sep, False, False, 4)
+        right_box.pack_start(sep, False, False, 8)
 
-        # Info display area
-        self._info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self._info_placeholder = Gtk.Label(label="Select an Android OS to view details")
-        self._info_placeholder.set_halign(Gtk.Align.START)
-        self._info_placeholder.set_opacity(0.6)
-        self._info_box.pack_start(self._info_placeholder, False, False, 0)
-        right_box.pack_start(self._info_box, True, True, 0)
+        # Scrollable info display area
+        info_scroll = Gtk.ScrolledWindow()
+        info_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
 
-        main_box.pack_start(left_scroll, False, False, 0)
-        main_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 10)
-        main_box.pack_start(right_box, True, True, 0)
+        self._info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._info_box.set_margin_top(4)
+        info_scroll.add(self._info_box)
+        right_box.pack_start(info_scroll, True, True, 0)
 
-        self.add(main_box)
+        right_frame.pack_start(right_box, True, True, 0)
+
+        paned.pack1(left_scroll, resize=True, shrink=False)
+        paned.pack2(right_frame, resize=True, shrink=False)
+        paned.set_position(480)
+
+        self.add(paned)
         self._build_form()
 
     def _build_form(self):
@@ -129,7 +145,9 @@ class LoadOSPage(Gtk.ScrolledWindow):
         os_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
 
         # Custom Android option
-        self._rb_custom = Gtk.RadioButton.new_with_label_from_widget(self._rb_stock, "Custom Android OS")
+        self._rb_custom = Gtk.RadioButton.new_with_label_from_widget(
+            self._rb_stock, "Custom Android OS"
+        )
         self._rb_custom.connect("toggled", self._on_os_source_toggled)
         os_box.pack_start(self._rb_custom, False, False, 0)
 
@@ -182,7 +200,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box1.set_margin_top(6)
         box1.set_margin_bottom(6)
 
-        box1.pack_start(self._make_combo_row("GPU Mode:", ["host", "software", "off"], "gpu_mode"), False, False, 0)
+        gpu_opts = ["host", "software", "off"]
+        box1.pack_start(self._make_combo_row("GPU Mode:", gpu_opts, "gpu_mode"), False, False, 0)
 
         api_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         api_label = Gtk.Label(label="Graphics API:")
@@ -212,7 +231,7 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
         box2.pack_start(self._make_entry_row("ADB Path:", "/usr/bin/adb", "adb_path"), False, False, 0)
         box2.pack_start(self._make_spin_row("ADB Port:", 5555, 1024, 65535, "adb_port"), False, False, 0)
-        box2.pack_start(self._make_check_row("Auto-connect on boot", True, "adb_auto_connect"), False, False, 0)
+        box2.pack_start(self._make_check_row("Auto-connect on boot", True, "adb_auto"), False, False, 0)
 
         exp2.add(box2)
         self._form_box.pack_start(exp2, False, False, 0)
@@ -233,7 +252,8 @@ class LoadOSPage(Gtk.ScrolledWindow):
         sensor_label.set_halign(Gtk.Align.START)
         box3.pack_start(sensor_label, False, False, 0)
         for sensor in ["Accelerometer", "Gyroscope", "Proximity", "GPS"]:
-            box3.pack_start(self._make_check_row(sensor, True, f"sensor_{sensor.lower()}"), False, False, 0)
+            key = f"sensor_{sensor.lower()}"
+            box3.pack_start(self._make_check_row(sensor, True, key), False, False, 0)
 
         exp3.add(box3)
         self._form_box.pack_start(exp3, False, False, 0)
@@ -246,7 +266,7 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box4.set_margin_bottom(6)
 
         box4.pack_start(self._make_file_row("Shared Folder:", "~/LinBlock/shared", "storage_shared"), False, False, 0)
-        row = self._make_file_row("Screenshot Dir:", "~/LinBlock/screenshots", "storage_screenshots")
+        row = self._make_file_row("Screenshots:", "~/LinBlock/screenshots", "storage_screenshots")
         box4.pack_start(row, False, False, 0)
         box4.pack_start(self._make_file_row("Image Cache:", "~/LinBlock/cache", "storage_cache"), False, False, 0)
 
@@ -274,10 +294,10 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box6.set_margin_top(6)
         box6.set_margin_bottom(6)
 
-        box6.pack_start(self._make_check_row("Keyboard-to-touch mapping", True, "input_kbd_touch"), False, False, 0)
+        box6.pack_start(self._make_check_row("Keyboard-to-touch mapping", True, "input_kbd"), False, False, 0)
         box6.pack_start(self._make_check_row("Gamepad support", False, "input_gamepad"), False, False, 0)
         mouse_opts = ["direct", "relative", "touch"]
-        box6.pack_start(self._make_combo_row("Mouse Mode:", mouse_opts, "input_mouse_mode"), False, False, 0)
+        box6.pack_start(self._make_combo_row("Mouse Mode:", mouse_opts, "input_mouse"), False, False, 0)
 
         exp6.add(box6)
         self._form_box.pack_start(exp6, False, False, 0)
@@ -290,9 +310,9 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box7.set_margin_bottom(6)
 
         box7.pack_start(self._make_check_row("Webcam passthrough", False, "cam_webcam"), False, False, 0)
-        box7.pack_start(self._make_combo_row("Microphone:", ["default", "none", "virtual"], "cam_mic"), False, False, 0)
-        audio_opts = ["default", "none", "virtual"]
-        box7.pack_start(self._make_combo_row("Audio Output:", audio_opts, "cam_audio"), False, False, 0)
+        media_opts = ["default", "none", "virtual"]
+        box7.pack_start(self._make_combo_row("Microphone:", media_opts, "cam_mic"), False, False, 0)
+        box7.pack_start(self._make_combo_row("Audio Output:", media_opts, "cam_audio"), False, False, 0)
 
         exp7.add(box7)
         self._form_box.pack_start(exp7, False, False, 0)
@@ -345,12 +365,12 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
         save_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
 
-        name_label = Gtk.Label(label="OS Name:")
+        name_label = Gtk.Label(label="Profile Name:")
         name_label.set_halign(Gtk.Align.START)
         save_box.pack_start(name_label, False, False, 0)
 
         self._os_name_entry = Gtk.Entry()
-        self._os_name_entry.set_placeholder_text("Enter OS profile name...")
+        self._os_name_entry.set_placeholder_text("Enter profile name...")
         self._fields["os_name"] = self._os_name_entry
         save_box.pack_start(self._os_name_entry, True, True, 0)
 
@@ -399,7 +419,10 @@ class LoadOSPage(Gtk.ScrolledWindow):
         label.set_halign(Gtk.Align.START)
         box.pack_start(label, False, False, 0)
 
-        adj = Gtk.Adjustment(value=default, lower=min_val, upper=max_val, step_increment=1, page_increment=10)
+        adj = Gtk.Adjustment(
+            value=default, lower=min_val, upper=max_val,
+            step_increment=1, page_increment=10
+        )
         spin = Gtk.SpinButton(adjustment=adj)
         spin.set_numeric(True)
         self._fields[key] = spin
@@ -433,23 +456,21 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
     def _populate_stock_images(self):
         """Scan android-images directory and populate the combo box."""
-        self._stock_images = {}  # Maps combo id to path
+        self._stock_images = {}
 
         if os.path.isdir(self._images_dir):
             for entry in sorted(os.listdir(self._images_dir)):
                 entry_path = os.path.join(self._images_dir, entry)
                 if os.path.isdir(entry_path):
-                    # Check if it has a system.img or source.properties
                     has_system = os.path.exists(os.path.join(entry_path, "system.img"))
                     has_props = os.path.exists(os.path.join(entry_path, "source.properties"))
 
                     if has_system or has_props:
-                        # Try to get display name from source.properties
                         info = self._parse_android_folder(entry_path)
-                        android_ver = info.get("AndroidVersion", info.get("ro.build.version.release", ""))
-                        api_level = info.get("SystemImage.ApiLevel", info.get("ro.build.version.sdk", ""))
-                        abi = info.get("SystemImage.Abi", info.get("ro.product.cpu.abi", "x86_64"))
-                        tag = info.get("SystemImage.TagDisplay", info.get("SystemImage.TagId", ""))
+                        android_ver = info.get("AndroidVersion", "")
+                        api_level = info.get("SystemImage.ApiLevel", "")
+                        abi = info.get("SystemImage.Abi", "x86_64")
+                        tag = info.get("SystemImage.TagDisplay", "")
 
                         if android_ver and api_level:
                             display = f"Android {android_ver} (API {api_level}) - {abi}"
@@ -461,7 +482,6 @@ class LoadOSPage(Gtk.ScrolledWindow):
                         self._stock_images[entry] = entry_path
                         self._stock_combo.append(entry, display)
 
-        # If no images found, add placeholder
         if not self._stock_images:
             self._stock_combo.append("none", "No images found - click Download More...")
             self._stock_images["none"] = None
@@ -491,17 +511,16 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
     def _on_download_clicked(self, button):
         """Handle download button click."""
-        version_id = self._stock_combo.get_active_id()
         dialog = Gtk.MessageDialog(
             transient_for=self.get_toplevel(),
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.OK,
-            text=f"Download {version_id}",
+            text="Download Android Images",
         )
         dialog.format_secondary_text(
-            f"Download functionality will fetch {version_id} system image\n"
-            "to ~/.linblock/android-images/\n\n"
-            "(Not yet implemented)"
+            "Visit the Android GSI releases page to download system images:\n\n"
+            "https://developer.android.com/topic/generic-system-image/releases\n\n"
+            f"Extract downloaded images to:\n{self._images_dir}"
         )
         dialog.run()
         dialog.destroy()
@@ -542,14 +561,16 @@ class LoadOSPage(Gtk.ScrolledWindow):
 
         if not version_id or version_id == "none":
             self._display_os_info({"Status": "No Android image selected"})
+            self._current_image_path = None
             return
 
-        # Get the path for this image
         image_path = self._stock_images.get(version_id)
         if image_path and os.path.isdir(image_path):
+            self._current_image_path = image_path
             info = self._parse_android_folder(image_path)
             self._display_os_info(info)
         else:
+            self._current_image_path = None
             self._display_os_info({"Status": "Image not found"})
 
     def _update_custom_info(self):
@@ -557,8 +578,10 @@ class LoadOSPage(Gtk.ScrolledWindow):
         path = self._custom_entry.get_text().strip()
         if not path or not os.path.isdir(path):
             self._display_os_info({"Status": "No valid folder selected"})
+            self._current_image_path = None
             return
 
+        self._current_image_path = path
         info = self._parse_android_folder(path)
         self._display_os_info(info)
 
@@ -579,7 +602,7 @@ class LoadOSPage(Gtk.ScrolledWindow):
             except Exception as e:
                 info["Parse Error"] = str(e)
 
-        # Try to read build.prop for additional info
+        # Try to read build.prop for additional info (only specific keys)
         build_prop = os.path.join(path, "build.prop")
         if os.path.exists(build_prop):
             try:
@@ -589,22 +612,19 @@ class LoadOSPage(Gtk.ScrolledWindow):
                         if '=' in line and not line.startswith('#'):
                             key, value = line.split('=', 1)
                             key = key.strip()
-                            # Only add build.prop values if not already in source.properties
-                            if key not in info:
+                            # Only add specific build.prop values
+                            if key in [
+                                "ro.build.version.release",
+                                "ro.build.version.sdk",
+                                "ro.build.id",
+                                "ro.build.version.security_patch",
+                                "ro.build.date",
+                                "ro.product.cpu.abi",
+                                "ro.build.description"
+                            ] and key not in info:
                                 info[key] = value.strip()
             except Exception:
                 pass
-
-        # Try to extract info from folder name if no properties found
-        if not info.get("AndroidVersion") and not info.get("ro.build.version.release"):
-            parts = path.split(os.sep)
-            for part in parts:
-                if part.startswith("android-"):
-                    info["Folder.ApiLevel"] = part.replace("android-", "")
-                elif part in ["x86_64", "x86", "arm64-v8a", "armeabi-v7a"]:
-                    info["Folder.Abi"] = part
-                elif part in ["google_apis", "google_apis_playstore", "default", "aosp"]:
-                    info["Folder.TagId"] = part
 
         # Check for system.img
         system_img = os.path.join(path, "system.img")
@@ -632,50 +652,36 @@ class LoadOSPage(Gtk.ScrolledWindow):
             self._info_box.show_all()
             return
 
-        # Display order for known keys
-        display_order = [
-            ("AndroidVersion", "Android Version"),
-            ("ro.build.version.release", "Android Version"),
-            ("SystemImage.ApiLevel", "API Level"),
-            ("ro.build.version.sdk", "API Level"),
-            ("SystemImage.Abi", "Architecture (ABI)"),
-            ("ro.product.cpu.abi", "Architecture (ABI)"),
-            ("SystemImage.TagId", "Tag ID"),
-            ("SystemImage.TagDisplay", "Variant"),
-            ("Pkg.Desc", "Description"),
-            ("ro.build.description", "Build Description"),
-            ("ro.build.id", "Build ID"),
-            ("ro.build.version.security_patch", "Security Patch"),
-            ("ro.build.date", "Build Date"),
-            ("SystemImage.Revision", "Revision"),
-            ("Folder.ApiLevel", "API Level (from folder)"),
-            ("Folder.Abi", "Architecture (from folder)"),
-            ("Folder.TagId", "Tag (from folder)"),
-            ("system.img", "System Image Size"),
-            ("Path", "Location"),
-            ("Status", "Status"),
-            ("Parse Error", "Error"),
+        # Map of source keys to display labels (priority order)
+        # Only show one value per display label
+        display_map = [
+            ("Android Version", ["AndroidVersion", "ro.build.version.release"]),
+            ("API Level", ["SystemImage.ApiLevel", "ro.build.version.sdk"]),
+            ("Architecture", ["SystemImage.Abi", "ro.product.cpu.abi"]),
+            ("Variant", ["SystemImage.TagDisplay", "SystemImage.TagId"]),
+            ("Description", ["Pkg.Desc"]),
+            ("Build ID", ["ro.build.id"]),
+            ("Security Patch", ["ro.build.version.security_patch"]),
+            ("Build Date", ["ro.build.date"]),
+            ("System Image", ["system.img"]),
+            ("Location", ["Path"]),
+            ("Status", ["Status"]),
         ]
 
-        displayed_keys = set()
-        for key, display_name in display_order:
-            if key in info:
-                self._add_info_row(display_name, info[key])
-                displayed_keys.add(key)
-
-        # Display any remaining keys
-        for key, value in info.items():
-            if key not in displayed_keys:
-                self._add_info_row(key, value)
+        for display_label, source_keys in display_map:
+            for key in source_keys:
+                if key in info:
+                    self._add_info_row(display_label, info[key])
+                    break  # Only show first matching key
 
         self._info_box.show_all()
 
     def _add_info_row(self, label, value):
         """Add an info row to the info panel."""
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
 
         label_widget = Gtk.Label(label=f"{label}:")
-        label_widget.set_size_request(140, -1)
+        label_widget.set_size_request(110, -1)
         label_widget.set_halign(Gtk.Align.START)
         label_widget.set_valign(Gtk.Align.START)
         label_widget.get_style_context().add_class("dim-label")
@@ -685,24 +691,155 @@ class LoadOSPage(Gtk.ScrolledWindow):
         value_widget.set_halign(Gtk.Align.START)
         value_widget.set_line_wrap(True)
         value_widget.set_selectable(True)
+        value_widget.set_max_width_chars(30)
         row.pack_start(value_widget, True, True, 0)
 
         self._info_box.pack_start(row, False, False, 0)
 
     def _on_save_clicked(self, button):
-        """Handle save button click."""
+        """Handle save button click - save profile to disk."""
         os_name = self._os_name_entry.get_text().strip()
         if not os_name:
+            self._show_message(Gtk.MessageType.WARNING, "Please enter a profile name.")
+            return
+
+        if not self._current_image_path:
+            self._show_message(Gtk.MessageType.WARNING, "Please select an Android OS image.")
+            return
+
+        # Check if profile already exists
+        if self._profile_manager.profile_exists(os_name):
             dialog = Gtk.MessageDialog(
                 transient_for=self.get_toplevel(),
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.OK,
-                text="Please enter an OS profile name.",
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.YES_NO,
+                text=f"Profile '{os_name}' already exists. Overwrite?",
             )
-            dialog.run()
+            response = dialog.run()
             dialog.destroy()
-            return
-        print(f"Save profile: {os_name}")
+            if response != Gtk.ResponseType.YES:
+                return
+
+        # Create and save profile
+        try:
+            profile = self._create_profile_from_form(os_name)
+            self._profile_manager.save_profile(profile)
+            self._show_message(
+                Gtk.MessageType.INFO,
+                f"Profile '{os_name}' saved successfully!"
+            )
+        except Exception as e:
+            self._show_message(
+                Gtk.MessageType.ERROR,
+                f"Failed to save profile: {str(e)}"
+            )
+
+    def _create_profile_from_form(self, name):
+        """Create an OSProfile from the current form values."""
+        now = datetime.now().isoformat()
+        profile = OSProfile()
+        profile.name = name
+        profile.created = now
+        profile.modified = now
+
+        # Graphics
+        profile.graphics.gpu_mode = self._get_combo_value("gpu_mode")
+        profile.graphics.api = "vulkan" if self._fields.get("api_vulkan") and \
+            self._fields["api_vulkan"].get_active() else "opengl"
+        profile.graphics.renderer = self._get_combo_value("renderer")
+
+        # ADB
+        profile.adb.path = self._get_entry_value("adb_path")
+        profile.adb.port = self._get_spin_value("adb_port")
+        profile.adb.auto_connect = self._get_check_value("adb_auto")
+
+        # Device
+        profile.device.screen_preset = self._get_combo_value("screen_preset")
+        profile.device.screen_width = self._get_spin_value("screen_width")
+        profile.device.screen_height = self._get_spin_value("screen_height")
+        profile.device.sensors.accelerometer = self._get_check_value("sensor_accelerometer")
+        profile.device.sensors.gyroscope = self._get_check_value("sensor_gyroscope")
+        profile.device.sensors.proximity = self._get_check_value("sensor_proximity")
+        profile.device.sensors.gps = self._get_check_value("sensor_gps")
+
+        # Storage
+        profile.storage.shared_folder = self._get_entry_value("storage_shared")
+        profile.storage.screenshot_dir = self._get_entry_value("storage_screenshots")
+        profile.storage.image_cache = self._get_entry_value("storage_cache")
+
+        # Network
+        profile.network.bridge_mode = self._get_check_value("net_bridge")
+        profile.network.proxy_address = self._get_entry_value("net_proxy_addr")
+        profile.network.proxy_port = self._get_spin_value("net_proxy_port")
+
+        # Input
+        profile.input.keyboard_to_touch = self._get_check_value("input_kbd")
+        profile.input.gamepad = self._get_check_value("input_gamepad")
+        profile.input.mouse_mode = self._get_combo_value("input_mouse")
+
+        # Camera/Media
+        profile.camera_media.webcam_passthrough = self._get_check_value("cam_webcam")
+        profile.camera_media.mic_source = self._get_combo_value("cam_mic")
+        profile.camera_media.audio_output = self._get_combo_value("cam_audio")
+
+        # Performance
+        profile.performance.hypervisor = self._get_combo_value("perf_hypervisor")
+        ram_str = self._get_combo_value("perf_ram")
+        profile.performance.ram_mb = int(ram_str) if ram_str else 4096
+        profile.performance.cpu_cores = self._get_spin_value("perf_cpu_cores")
+
+        # Google Services
+        profile.google_services.play_store = self._get_check_value("google_play_store")
+        profile.google_services.play_services = self._get_check_value("google_play_services")
+        profile.google_services.play_protect = self._get_check_value("google_play_protect")
+        profile.google_services.location_service = self._get_check_value("google_location")
+        profile.google_services.contacts_sync = self._get_check_value("google_contacts_sync")
+        profile.google_services.calendar_sync = self._get_check_value("google_calendar_sync")
+        profile.google_services.drive = self._get_check_value("google_drive")
+        profile.google_services.chrome = self._get_check_value("google_chrome")
+        profile.google_services.maps = self._get_check_value("google_maps")
+        profile.google_services.assistant = self._get_check_value("google_assistant")
+
+        return profile
+
+    def _get_combo_value(self, key):
+        """Get value from a combo box field."""
+        widget = self._fields.get(key)
+        if widget and isinstance(widget, Gtk.ComboBoxText):
+            return widget.get_active_text() or ""
+        return ""
+
+    def _get_entry_value(self, key):
+        """Get value from an entry field."""
+        widget = self._fields.get(key)
+        if widget and isinstance(widget, Gtk.Entry):
+            return widget.get_text()
+        return ""
+
+    def _get_spin_value(self, key):
+        """Get value from a spin button field."""
+        widget = self._fields.get(key)
+        if widget and isinstance(widget, Gtk.SpinButton):
+            return widget.get_value_as_int()
+        return 0
+
+    def _get_check_value(self, key):
+        """Get value from a check button field."""
+        widget = self._fields.get(key)
+        if widget and isinstance(widget, Gtk.CheckButton):
+            return widget.get_active()
+        return False
+
+    def _show_message(self, msg_type, text):
+        """Show a message dialog."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self.get_toplevel(),
+            message_type=msg_type,
+            buttons=Gtk.ButtonsType.OK,
+            text=text,
+        )
+        dialog.run()
+        dialog.destroy()
 
     def get_field_values(self):
         """Collect all form field values into a dictionary."""

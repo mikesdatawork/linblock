@@ -3,7 +3,14 @@
  *
  * GTK3 CSS for the LinBlock application dashboard.
  * Based on a dark theme with accent colors for interactive elements.
+ * NO ROUNDED CORNERS - all elements use sharp edges.
  */
+
+/* === Global Reset for Rounded Corners === */
+* {
+    border-radius: 0;
+    -gtk-outline-radius: 0;
+}
 
 /* === Global Window === */
 window {
@@ -25,37 +32,38 @@ window {
 }
 
 /* === Sidebar Buttons === */
-.sidebar-button {
+.sidebar-button,
+.sidebar-button:hover,
+.sidebar-button:active,
+.sidebar-button:focus,
+.sidebar-button:checked,
+.sidebar-button-active {
     background: transparent;
     background-color: transparent;
     background-image: none;
     border: none;
     border-radius: 0;
     box-shadow: none;
+    outline: none;
+    -gtk-outline-radius: 0;
+}
+
+.sidebar-button {
     padding: 10px 16px;
     color: #bac2de;
     font-size: 13px;
     min-height: 32px;
-    transition: background-color 150ms ease;
 }
 
 .sidebar-button:hover {
     background: #313244;
     background-color: #313244;
-    background-image: none;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
     color: #cdd6f4;
 }
 
 .sidebar-button-active {
     background: #45475a;
     background-color: #45475a;
-    background-image: none;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
     color: #89b4fa;
     font-weight: bold;
     border-left: 3px solid #89b4fa;
@@ -83,15 +91,24 @@ label.title {
     font-size: 16px;
 }
 
-/* === Buttons === */
+/* === All Buttons - No Rounded Corners === */
+button,
+button:hover,
+button:active,
+button:focus,
+button:checked {
+    border-radius: 0;
+    -gtk-outline-radius: 0;
+    background-image: none;
+    box-shadow: none;
+}
+
 button {
     background-color: #313244;
     color: #cdd6f4;
     border: 1px solid #45475a;
-    border-radius: 6px;
     padding: 6px 12px;
     min-height: 24px;
-    transition: background-color 150ms ease;
 }
 
 button:hover {
@@ -131,7 +148,7 @@ button.destructive-action:hover {
     background-color: #313244;
     color: #cdd6f4;
     border: 1px solid #45475a;
-    border-radius: 4px;
+    border-radius: 0;
     padding: 4px 8px;
     min-height: 28px;
     font-size: 11px;
@@ -147,20 +164,21 @@ button.destructive-action:hover {
     border-right: 1px solid #313244;
 }
 
-/* === Entries === */
-entry {
+/* === Entries - No Rounded Corners === */
+entry,
+entry:focus {
     background-color: #313244;
     color: #cdd6f4;
     border: 1px solid #45475a;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 6px 8px;
     min-height: 24px;
     caret-color: #89b4fa;
+    box-shadow: none;
 }
 
 entry:focus {
     border-color: #89b4fa;
-    box-shadow: 0 0 0 1px #89b4fa;
 }
 
 entry selection {
@@ -169,11 +187,16 @@ entry selection {
 }
 
 /* === Spin Buttons === */
+spinbutton,
+spinbutton entry,
+spinbutton button {
+    border-radius: 0;
+}
+
 spinbutton {
     background-color: #313244;
     color: #cdd6f4;
     border: 1px solid #45475a;
-    border-radius: 6px;
 }
 
 spinbutton entry {
@@ -183,7 +206,6 @@ spinbutton entry {
 spinbutton button {
     background-color: #45475a;
     border: none;
-    border-radius: 0;
     min-width: 24px;
 }
 
@@ -192,14 +214,21 @@ spinbutton button:hover {
 }
 
 /* === Combo Boxes === */
-combobox button {
+combobox button,
+combobox button:hover,
+combobox button:active {
     background-color: #313244;
     border: 1px solid #45475a;
-    border-radius: 6px;
+    border-radius: 0;
 }
 
 combobox button:hover {
     background-color: #45475a;
+}
+
+combobox window menu,
+combobox window menu menuitem {
+    border-radius: 0;
 }
 
 /* === Check Buttons === */
@@ -210,7 +239,7 @@ checkbutton {
 checkbutton check {
     background-color: #313244;
     border: 1px solid #45475a;
-    border-radius: 4px;
+    border-radius: 0;
     min-width: 18px;
     min-height: 18px;
 }
@@ -233,6 +262,7 @@ radiobutton {
 radiobutton radio {
     background-color: #313244;
     border: 1px solid #45475a;
+    border-radius: 0;
     min-width: 18px;
     min-height: 18px;
 }
@@ -245,7 +275,7 @@ radiobutton radio:checked {
 /* === Switches === */
 switch {
     background-color: #45475a;
-    border-radius: 12px;
+    border-radius: 0;
     min-width: 40px;
     min-height: 20px;
 }
@@ -256,7 +286,7 @@ switch:checked {
 
 switch slider {
     background-color: #cdd6f4;
-    border-radius: 50%;
+    border-radius: 0;
     min-width: 16px;
     min-height: 16px;
 }
@@ -264,19 +294,19 @@ switch slider {
 /* === Scales === */
 scale trough {
     background-color: #313244;
-    border-radius: 4px;
+    border-radius: 0;
     min-height: 6px;
 }
 
 scale highlight {
     background-color: #89b4fa;
-    border-radius: 4px;
+    border-radius: 0;
 }
 
 scale slider {
     background-color: #cdd6f4;
     border: 2px solid #89b4fa;
-    border-radius: 50%;
+    border-radius: 0;
     min-width: 16px;
     min-height: 16px;
 }
@@ -284,13 +314,13 @@ scale slider {
 /* === Level Bars === */
 levelbar trough {
     background-color: #313244;
-    border-radius: 4px;
+    border-radius: 0;
     min-height: 8px;
 }
 
 levelbar block.filled {
     background-color: #a6e3a1;
-    border-radius: 4px;
+    border-radius: 0;
 }
 
 levelbar block.empty {
@@ -332,6 +362,7 @@ treeview header button {
     background-color: #181825;
     color: #a6adc8;
     border-bottom: 1px solid #313244;
+    border-radius: 0;
     font-weight: bold;
     padding: 4px 8px;
 }
@@ -343,7 +374,7 @@ scrollbar {
 
 scrollbar slider {
     background-color: #45475a;
-    border-radius: 4px;
+    border-radius: 0;
     min-width: 6px;
     min-height: 6px;
 }
@@ -357,7 +388,7 @@ tooltip {
     background-color: #313244;
     color: #cdd6f4;
     border: 1px solid #45475a;
-    border-radius: 6px;
+    border-radius: 0;
     padding: 4px 8px;
 }
 
@@ -368,6 +399,7 @@ messagedialog {
 
 messagedialog .dialog-action-area button {
     min-width: 80px;
+    border-radius: 0;
 }
 
 /* === File Chooser === */
@@ -380,8 +412,8 @@ filechooser {
 .os-info-panel {
     background-color: #181825;
     border: 1px solid #313244;
-    border-radius: 8px;
-    padding: 12px;
+    border-radius: 0;
+    padding: 16px;
 }
 
 /* === Dim Label === */
@@ -390,9 +422,10 @@ filechooser {
 }
 
 /* === Frames === */
-frame {
+frame,
+frame > border {
     border: 1px solid #313244;
-    border-radius: 6px;
+    border-radius: 0;
 }
 
 frame > label {
@@ -400,7 +433,34 @@ frame > label {
     font-weight: bold;
 }
 
-frame > border {
-    border: 1px solid #313244;
-    border-radius: 6px;
+/* === Menus and Popovers === */
+menu,
+menuitem,
+popover,
+popover > contents {
+    border-radius: 0;
+    background-color: #1e1e2e;
+}
+
+menuitem:hover {
+    background-color: #313244;
+}
+
+/* === Notebook/Tabs === */
+notebook tab {
+    border-radius: 0;
+}
+
+/* === Info Bars === */
+infobar {
+    border-radius: 0;
+}
+
+/* === Header Bar (if used) === */
+headerbar {
+    border-radius: 0;
+}
+
+headerbar button {
+    border-radius: 0;
 }
