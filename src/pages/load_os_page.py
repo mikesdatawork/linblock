@@ -33,7 +33,12 @@ class LoadOSPage(Gtk.ScrolledWindow):
         self._images_dir = _get_default_images_dir()
         self._profile_manager = ProfileManager()
         self._current_image_path = None
+        self._on_profile_saved_callback = None
         self._build_content()
+
+    def set_on_profile_saved(self, callback):
+        """Set callback to be called when a profile is saved."""
+        self._on_profile_saved_callback = callback
 
     def _build_content(self):
         # Use Paned for adjustable center margin
@@ -728,6 +733,9 @@ class LoadOSPage(Gtk.ScrolledWindow):
                 Gtk.MessageType.INFO,
                 f"Profile '{os_name}' saved successfully!"
             )
+            # Notify main window to refresh profile list
+            if self._on_profile_saved_callback:
+                self._on_profile_saved_callback(profile)
         except Exception as e:
             self._show_message(
                 Gtk.MessageType.ERROR,
@@ -739,6 +747,7 @@ class LoadOSPage(Gtk.ScrolledWindow):
         now = datetime.now().isoformat()
         profile = OSProfile()
         profile.name = name
+        profile.image_path = self._current_image_path or ""
         profile.created = now
         profile.modified = now
 

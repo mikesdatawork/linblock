@@ -80,6 +80,7 @@ class GoogleServicesConfig:
 @dataclass
 class OSProfile:
     name: str = ""
+    image_path: str = ""
     created: str = ""
     modified: str = ""
     graphics: GraphicsConfig = field(default_factory=GraphicsConfig)
@@ -106,6 +107,7 @@ class OSProfile:
             data = yaml.safe_load(f) or {}
         profile = cls()
         profile.name = data.get('name', '')
+        profile.image_path = data.get('image_path', '')
         profile.created = data.get('created', '')
         profile.modified = data.get('modified', '')
         if 'graphics' in data:
