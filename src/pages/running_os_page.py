@@ -2,7 +2,8 @@
 
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
+import os
 
 from .page_base import PageBase
 from ui.components.device_controls import DeviceControlsPanel
@@ -18,6 +19,9 @@ class RunningOSPage(Gtk.Box):
     def __init__(self, profile_name=""):
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self._profile_name = profile_name
+        self._profile_dict = None
+        self._emulator = None
+        self._emulator_initialized = False
 
         # Add padding around the entire page
         self.set_margin_start(16)
@@ -33,6 +37,16 @@ class RunningOSPage(Gtk.Box):
         self.controls.set_size_request(180, -1)
         self.pack_start(self.controls, False, False, 0)
 
+        # Connect power switch to emulator control
+        power_switch = self.controls.get_control("power")
+        if power_switch:
+            power_switch.connect("notify::active", self._on_power_toggled)
+
+        # Connect reset button
+        reset_btn = self.controls.get_control("reset")
+        if reset_btn:
+            reset_btn.connect("clicked", self._on_reset_clicked)
+
         # Separator with margin
         sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
         sep.set_margin_start(8)
@@ -44,8 +58,199 @@ class RunningOSPage(Gtk.Box):
         self.pack_start(self.display, True, True, 0)
 
     def configure_for_profile(self, profile_dict):
-        """Configure controls based on the OS profile settings."""
+        """Configure controls and emulator based on the OS profile settings."""
+        self._profile_dict = profile_dict
         self.controls.configure_for_profile(profile_dict)
+
+        # Initialize emulator with profile settings
+        self._init_emulator()
+
+    def _init_emulator(self):
+        """Initialize the emulator core with profile configuration."""
+        if self._emulator_initialized:
+            return
+
+        if not self._profile_dict:
+            return
+
+        try:
+            from modules.emulation.emulator_core.interface import create_interface
+
+            # Extract configuration from profile
+            performance = self._profile_dict.get("performance", {})
+            device = self._profile_dict.get("device", {})
+            graphics = self._profile_dict.get("graphics", {})
+            adb = self._profile_dict.get("adb", {})
+
+            # Get system image path
+            image_path = self._profile_dict.get("image_path", "")
+
+            # If image_path is a directory, look for system.img inside it
+            if image_path and os.path.isdir(image_path):
+                system_img = os.path.join(image_path, "system.img")
+                if os.path.exists(system_img):
+                    image_path = system_img
+
+            config = {
+                "system_image": image_path,
+                "memory_mb": performance.get("ram_mb", 4096),
+                "cpu_cores": performance.get("cpu_cores", 4),
+                "use_kvm": performance.get("hypervisor", "kvm") == "kvm",
+                "screen_width": device.get("screen_width", 1080),
+                "screen_height": device.get("screen_height", 1920),
+                "gpu_mode": graphics.get("gpu_mode", "host"),
+                "adb_port": adb.get("port", 5555),
+                "vnc_port": 5900,  # Will need port allocation for multiple instances
+            }
+
+            self._emulator = create_interface(config)
+            self._emulator.initialize()
+
+            # Register callbacks for state and frame updates
+            if hasattr(self._emulator, 'add_state_callback'):
+                self._emulator.add_state_callback(self._on_emulator_state)
+            if hasattr(self._emulator, 'add_frame_callback'):
+                self._emulator.add_frame_callback(self._on_frame_update)
+
+            self._emulator_initialized = True
+
+            # Update display with configured resolution
+            self.display.set_resolution(
+                device.get("screen_width", 1080),
+                device.get("screen_height", 1920)
+            )
+
+        except Exception as e:
+            self._show_error(f"Failed to initialize emulator: {e}")
+
+    def _on_power_toggled(self, switch, pspec):
+        """Handle power switch toggle."""
+        if not self._emulator:
+            self._show_error("Emulator not initialized")
+            return
+
+        is_on = switch.get_active()
+
+        if is_on:
+            self._start_emulator()
+        else:
+            self._stop_emulator()
+
+    def _start_emulator(self):
+        """Start the emulator."""
+        if not self._emulator:
+            return
+
+        try:
+            from modules.emulation.emulator_core.interface import VMState
+
+            state = self._emulator.get_state()
+            if state == VMState.RUNNING:
+                return
+
+            # Update display to show starting state
+            self.display.set_status("Starting Android...")
+
+            # Start emulator (this may take a moment)
+            self._emulator.start()
+
+        except Exception as e:
+            self._show_error(f"Failed to start emulator: {e}")
+            # Reset power switch
+            power_switch = self.controls.get_control("power")
+            if power_switch:
+                power_switch.set_active(False)
+
+    def _stop_emulator(self):
+        """Stop the emulator."""
+        if not self._emulator:
+            return
+
+        try:
+            from modules.emulation.emulator_core.interface import VMState
+
+            state = self._emulator.get_state()
+            if state == VMState.STOPPED:
+                return
+
+            self.display.set_status("Stopping...")
+            self._emulator.stop()
+            self.display.set_status("Powered Off")
+
+        except Exception as e:
+            self._show_error(f"Failed to stop emulator: {e}")
+
+    def _on_reset_clicked(self, button):
+        """Handle reset button click."""
+        if not self._emulator:
+            return
+
+        try:
+            self.display.set_status("Resetting...")
+            self._emulator.reset()
+        except Exception as e:
+            self._show_error(f"Reset failed: {e}")
+
+    def _on_emulator_state(self, state):
+        """Handle emulator state changes (called from background thread)."""
+        from modules.emulation.emulator_core.interface import VMState
+
+        # Update UI from main thread
+        def update_ui():
+            if state == VMState.RUNNING:
+                self.display.set_status("")
+                power_switch = self.controls.get_control("power")
+                if power_switch and not power_switch.get_active():
+                    power_switch.set_active(True)
+            elif state == VMState.STOPPED:
+                self.display.set_status("Powered Off")
+                power_switch = self.controls.get_control("power")
+                if power_switch and power_switch.get_active():
+                    power_switch.set_active(False)
+            elif state == VMState.ERROR:
+                info = self._emulator.get_info() if self._emulator else None
+                error_msg = info.error_message if info else "Unknown error"
+                self.display.set_status(f"Error: {error_msg}")
+            elif state == VMState.STARTING:
+                self.display.set_status("Starting...")
+            elif state == VMState.STOPPING:
+                self.display.set_status("Stopping...")
+            return False
+
+        GLib.idle_add(update_ui)
+
+    def _on_frame_update(self, frame):
+        """Handle framebuffer update (called from background thread)."""
+        def update_display():
+            self.display.set_framebuffer(frame.data, frame.width, frame.height, frame.format)
+            return False
+
+        GLib.idle_add(update_display)
+
+    def _show_error(self, message):
+        """Show error message in a dialog."""
+        def show_dialog():
+            dialog = Gtk.MessageDialog(
+                transient_for=self.get_toplevel(),
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text=message,
+            )
+            dialog.run()
+            dialog.destroy()
+            return False
+
+        GLib.idle_add(show_dialog)
 
     def get_profile_name(self):
         return self._profile_name
+
+    def cleanup(self):
+        """Clean up emulator resources."""
+        if self._emulator:
+            try:
+                self._emulator.cleanup()
+            except Exception:
+                pass
+            self._emulator = None
+        self._emulator_initialized = False

@@ -23,8 +23,8 @@ class TestEmulatorCoreInterface:
 
     @pytest.fixture
     def config(self):
-        """Standard test configuration."""
-        return {"memory_mb": 2048, "cpu_cores": 2, "use_kvm": False}
+        """Standard test configuration using stub backend."""
+        return {"memory_mb": 2048, "cpu_cores": 2, "use_kvm": False, "backend": "stub"}
 
     @pytest.fixture
     def interface(self, config):
@@ -39,7 +39,8 @@ class TestEmulatorCoreInterface:
 
     def test_create_with_defaults(self):
         """Interface creates with default config when none provided."""
-        iface = create_interface()
+        # Use stub backend to avoid QEMU dependency in tests
+        iface = create_interface({"backend": "stub"})
         assert iface is not None
         assert isinstance(iface, EmulatorCoreInterface)
 
