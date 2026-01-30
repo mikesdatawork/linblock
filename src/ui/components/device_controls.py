@@ -4,6 +4,8 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 import os
+import subprocess
+from datetime import datetime
 
 
 class DeviceControlsPanel(Gtk.Box):
@@ -69,6 +71,16 @@ class DeviceControlsPanel(Gtk.Box):
         self._record_btn.connect("toggled", self._on_record_toggled)
         self._controls["record_video"] = self._record_btn
         self.pack_start(self._record_btn, False, False, 2)
+
+        # View Logs button (logging is always enabled with timestamps)
+        self._view_logs_btn = Gtk.Button(label="View Logs")
+        self._view_logs_btn.get_style_context().add_class("device-button")
+        self._view_logs_btn.connect("clicked", self._on_view_logs_clicked)
+        self._controls["view_logs"] = self._view_logs_btn
+        self.pack_start(self._view_logs_btn, False, False, 2)
+
+        # Track current session's log file
+        self._current_log_path = None
 
     def _build_separator(self):
         """Add a visual separator between always and conditional controls."""
@@ -183,6 +195,25 @@ class DeviceControlsPanel(Gtk.Box):
             return os.path.join(self._storage_base, self._profile_name, "videos")
         return os.path.join(self._storage_base, "videos")
 
+    def _get_logging_dir(self):
+        """Get the logging directory for the current profile."""
+        if self._profile_name:
+            return os.path.join(self._storage_base, self._profile_name, "logging")
+        return os.path.join(self._storage_base, "logging")
+
+    def _create_timestamped_log_path(self):
+        """Create a new timestamped log file path for this boot session."""
+        logging_dir = self._get_logging_dir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.path.join(logging_dir, f"boot_{timestamp}.log")
+
+    def _get_current_log_path(self):
+        """Get path to current session's log file."""
+        if self._current_log_path:
+            return self._current_log_path
+        # Fallback - create new one
+        return self._create_timestamped_log_path()
+
     def _on_screenshot_clicked(self, button):
         """Handle screenshot button click."""
         screenshot_dir = self._get_screenshot_dir()
@@ -202,6 +233,74 @@ class DeviceControlsPanel(Gtk.Box):
             # TODO: Stop recording
             print(f"Recording stopped, saved to: {video_dir}")
             button.set_label("Record Video")
+
+    def _on_view_logs_clicked(self, button):
+        """Handle view logs button - opens logging directory."""
+        logging_dir = self._get_logging_dir()
+
+        # Ensure directory exists
+        os.makedirs(logging_dir, exist_ok=True)
+
+        # Open the logging directory in file manager
+        # Use GLib.idle_add to avoid blocking GTK main loop
+        def open_file_manager():
+            try:
+                # Use shell=False and pass path as single argument for safety
+                subprocess.Popen(
+                    ["xdg-open", logging_dir],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True  # Detach from parent process
+                )
+            except Exception as e:
+                print(f"Failed to open file manager: {e}")
+                print(f"Log directory: {logging_dir}")
+            return False  # Don't repeat
+
+        from gi.repository import GLib
+        GLib.idle_add(open_file_manager)
+
+    def get_logging_config(self):
+        """Get logging configuration for QEMU.
+
+        Logging is always enabled with timestamped files.
+
+        Returns:
+            dict: Contains 'enabled' bool and 'serial_log' path.
+        """
+        return {
+            "enabled": True,
+            "serial_log": self._get_current_log_path(),
+            "log_dir": self._get_logging_dir(),
+        }
+
+    def prepare_logging_for_boot(self):
+        """Prepare logging for a new boot cycle.
+
+        Creates a new timestamped log file. Call before starting VM.
+
+        Returns:
+            str: Path to the new log file.
+        """
+        logging_dir = self._get_logging_dir()
+        os.makedirs(logging_dir, exist_ok=True)
+
+        # Create new timestamped log file
+        self._current_log_path = self._create_timestamped_log_path()
+
+        # Write header to log file
+        try:
+            with open(self._current_log_path, 'w') as f:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"# LinBlock Serial Console Log\n")
+                f.write(f"# Profile: {self._profile_name or 'default'}\n")
+                f.write(f"# Boot started: {timestamp}\n")
+                f.write(f"#\n\n")
+            print(f"Logging to: {self._current_log_path}")
+        except OSError as e:
+            print(f"Warning: Could not create log file: {e}")
+
+        return self._current_log_path
 
     def configure_for_profile(self, profile_dict):
         """Set control sensitivity based on profile settings.

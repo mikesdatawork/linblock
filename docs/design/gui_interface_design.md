@@ -109,15 +109,50 @@ Each section is a `Gtk.Expander` with a descriptive header.
 
 | # | Section | Key Fields |
 |---|---------|-----------|
-| 1 | Graphics / Rendering | GPU mode (host / software / off), OpenGL / Vulkan toggle, renderer backend dropdown |
+| 0 | Android OS Selection | Stock Android dropdown, Custom Android folder browser |
+| 0.5 | **Boot Configuration** | Boot mode (CD-ROM/Direct Kernel), ISO path, kernel/initrd extraction, boot presets (Software/Hardware/Debug/Custom), kernel parameters |
+| 1 | Graphics / Rendering | GPU mode (software / host / virgl), OpenGL / Vulkan toggle, renderer backend dropdown |
 | 2 | ADB Configuration | ADB binary path, port number, auto-connect on boot toggle |
 | 3 | Device Simulation Defaults | Screen size presets (phone 1080x1920, tablet 1600x2560, custom WxH), device profile dropdown, sensor enables (accelerometer, gyroscope, proximity, GPS) |
 | 4 | Storage Paths | Shared folders path, screenshot directory, image cache directory |
 | 5 | Network | Bridge mode toggle, proxy address + port, port forwarding rules list |
 | 6 | Input Mapping | Keyboard-to-touch enable, gamepad support toggle, mouse mode (direct / relative) |
 | 7 | Camera / Media | Webcam passthrough toggle, microphone source selector, audio output device |
-| 8 | Performance | KVM / HAXM selector, RAM profile (1 GB / 2 GB / 4 GB / 8 GB / custom), CPU core count spinner |
+| 8 | Performance | KVM availability indicator, RAM profile (2-16 GB), CPU core count spinner |
 | 9 | Google Services | Checklist of Google services, **all disabled by default**, each with a one-line description |
+
+#### Boot Configuration Section
+
+The Boot Configuration section enables proper Android-x86 boot setup:
+
+```
++----------------------------------------------------------+
+| Boot Configuration                                         |
++----------------------------------------------------------+
+| Boot Mode:                                                 |
+|   ( ) CD-ROM Boot (from ISO)                              |
+|   (•) Direct Kernel Boot (Recommended)                    |
+|                                                           |
+| ISO Image:    [path/to/android.iso        ] [Browse] [Extract] |
+| Kernel:       [path/to/kernel             ] [...]         |
+| Initrd:       [path/to/initrd.img         ] [...]         |
+|                                                           |
+| Boot Preset:  [Software Rendering (Recommended) ▼]        |
+|               Most compatible - uses CPU for graphics     |
+|                                                           |
+| Kernel Params: [root=/dev/ram0 nomodeset HWACCEL=0      ] |
+|                                                           |
+| Status: ✓ Ready for direct kernel boot                    |
++----------------------------------------------------------+
+```
+
+**Boot Presets:**
+| Preset | Kernel Parameters | GPU Mode | Use Case |
+|--------|------------------|----------|----------|
+| Software Rendering | `nomodeset HWACCEL=0` | software | First boot, testing, compatibility |
+| Hardware Acceleration | (none) | host | Daily use with GPU passthrough |
+| Debug Mode | `DEBUG=2 nomodeset HWACCEL=0` | software | Troubleshooting boot issues |
+| Custom | (user-defined) | (user choice) | Advanced users |
 
 #### Google Services Checklist
 

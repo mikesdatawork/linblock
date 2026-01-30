@@ -49,7 +49,9 @@ class VMConfig:
     use_kvm: bool = True
     kernel_path: Optional[str] = None
     initrd_path: Optional[str] = None
+    kernel_cmdline: str = ""
     system_image: Optional[str] = None
+    cdrom_image: Optional[str] = None  # ISO for CD-ROM boot
     screen_width: int = 1080
     screen_height: int = 1920
     vnc_port: int = 5900
@@ -229,7 +231,9 @@ class QEMUEmulatorCore(EmulatorCoreInterface):
             use_kvm=config.get("use_kvm", True),
             kernel_path=config.get("kernel_path"),
             initrd_path=config.get("initrd_path"),
+            kernel_cmdline=config.get("kernel_cmdline", ""),
             system_image=config.get("system_image"),
+            cdrom_image=config.get("cdrom_image"),
             screen_width=config.get("screen_width", 1080),
             screen_height=config.get("screen_height", 1920),
             vnc_port=config.get("vnc_port", 5900),
@@ -244,6 +248,8 @@ class QEMUEmulatorCore(EmulatorCoreInterface):
         self._frame_callbacks: List[Callable[[FrameBuffer], None]] = []
         self._error_message = ""
         self._start_time = 0.0
+        self._serial_log_path: Optional[str] = None
+        self._kernel_cmdline: str = config.get("kernel_cmdline", "")
 
     def add_state_callback(self, callback: Callable[[VMState], None]) -> None:
         """Register callback for VM state changes."""
@@ -302,6 +308,19 @@ class QEMUEmulatorCore(EmulatorCoreInterface):
         vm_state = state_map.get(qemu_state, VMState.ERROR)
         self._notify_state(vm_state)
 
+    def set_serial_log(self, path: Optional[str]) -> None:
+        """Set the serial console log file path.
+
+        Can be called before start() to enable serial logging.
+
+        Args:
+            path: Path to log file, or None to disable serial logging.
+        """
+        self._serial_log_path = path
+        # Update the QEMU process config if already initialized
+        if self._qemu_process and hasattr(self._qemu_process, '_config'):
+            self._qemu_process._config.serial_log = path
+
     def initialize(self) -> None:
         """Initialize QEMU process manager."""
         from .internal.qemu_process import QEMUProcess, QEMUConfig
@@ -317,6 +336,11 @@ class QEMUEmulatorCore(EmulatorCoreInterface):
             vnc_port=self._config.vnc_port,
             adb_port=self._config.adb_port,
             gpu_mode=self._config.gpu_mode,
+            serial_log=self._serial_log_path,
+            kernel=self._config.kernel_path,
+            initrd=self._config.initrd_path,
+            kernel_cmdline=self._kernel_cmdline or "",
+            cdrom_image=self._config.cdrom_image,
         )
 
         self._qemu_process = QEMUProcess(qemu_config)
@@ -458,24 +482,41 @@ class QEMUEmulatorCore(EmulatorCoreInterface):
         return None
 
     def cleanup(self) -> None:
-        """Clean up all resources."""
-        if self._state in (VMState.RUNNING, VMState.PAUSED):
+        """Clean up all resources - ensures QEMU is always terminated."""
+        # First try graceful stop if running
+        if self._state in (VMState.RUNNING, VMState.PAUSED, VMState.STARTING):
             try:
                 self.stop()
             except Exception:
                 pass
 
-        if self._vnc_client:
-            self._vnc_client.cleanup()
-            self._vnc_client = None
-
+        # Always force cleanup QEMU process to ensure no orphans
         if self._qemu_process:
-            self._qemu_process.cleanup()
+            try:
+                self._qemu_process.cleanup()  # This calls force_stop()
+            except Exception:
+                # Last resort: try to kill by PID
+                if self._qemu_process.pid:
+                    try:
+                        import os
+                        import signal
+                        os.kill(self._qemu_process.pid, signal.SIGKILL)
+                    except Exception:
+                        pass
             self._qemu_process = None
+
+        # Cleanup VNC client
+        if self._vnc_client:
+            try:
+                self._vnc_client.cleanup()
+            except Exception:
+                pass
+            self._vnc_client = None
 
         self._state_callbacks.clear()
         self._frame_callbacks.clear()
         self._initialized = False
+        self._state = VMState.STOPPED
 
 
 # -----------------------------------------------------------------------------

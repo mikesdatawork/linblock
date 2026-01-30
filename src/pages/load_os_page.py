@@ -5,12 +5,43 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib
 import os
 import sys
+import subprocess
+import threading
 from datetime import datetime
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.os_profile import OSProfile
 from utils.profile_manager import ProfileManager
+
+
+# Boot parameter presets for Android-x86
+BOOT_PRESETS = {
+    "software": {
+        "name": "Software Rendering (Recommended)",
+        "description": "Most compatible - uses CPU for graphics",
+        "params": "root=/dev/ram0 androidboot.selinux=permissive quiet nomodeset HWACCEL=0",
+        "gpu_mode": "software",
+    },
+    "hardware": {
+        "name": "Hardware Acceleration",
+        "description": "Better performance - requires compatible GPU",
+        "params": "root=/dev/ram0 androidboot.selinux=permissive quiet",
+        "gpu_mode": "host",
+    },
+    "debug": {
+        "name": "Debug Mode",
+        "description": "Verbose output for troubleshooting",
+        "params": "root=/dev/ram0 androidboot.selinux=permissive DEBUG=2 nomodeset HWACCEL=0",
+        "gpu_mode": "software",
+    },
+    "custom": {
+        "name": "Custom",
+        "description": "Manually specify kernel parameters",
+        "params": "",
+        "gpu_mode": "software",
+    },
+}
 
 
 def _get_default_images_dir():
@@ -185,14 +216,440 @@ class LoadOSPage(Gtk.ScrolledWindow):
         os_frame.add(os_box)
         self._form_box.pack_start(os_frame, False, False, 0)
 
-        # Update info panel with default stock selection
-        self._update_stock_info()
+        # === Boot Configuration Section ===
+        # Must be built before _update_stock_info() since it references boot UI elements
+        self._build_boot_config_section()
 
         # === Configuration Sections ===
         self._build_config_sections()
 
+        # Update info panel with default stock selection (after boot config is built)
+        self._update_stock_info()
+
         # === Save Section ===
         self._build_save_section()
+
+    def _build_boot_config_section(self):
+        """Build the boot configuration section with ISO detection and presets."""
+        boot_frame = Gtk.Frame(label=" Boot Configuration ")
+        boot_frame.set_margin_top(12)
+        boot_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        boot_box.set_margin_start(12)
+        boot_box.set_margin_end(12)
+        boot_box.set_margin_top(8)
+        boot_box.set_margin_bottom(8)
+
+        # Boot mode selection
+        mode_label = Gtk.Label()
+        mode_label.set_markup("<b>Boot Mode</b>")
+        mode_label.set_halign(Gtk.Align.START)
+        boot_box.pack_start(mode_label, False, False, 0)
+
+        # CD-ROM boot option
+        self._rb_cdrom_boot = Gtk.RadioButton.new_with_label(
+            None, "CD-ROM Boot (from ISO)"
+        )
+        self._rb_cdrom_boot.connect("toggled", self._on_boot_mode_toggled)
+        boot_box.pack_start(self._rb_cdrom_boot, False, False, 0)
+
+        cdrom_desc = Gtk.Label(label="    Boot from ISO image via virtual CD-ROM drive")
+        cdrom_desc.set_halign(Gtk.Align.START)
+        cdrom_desc.set_opacity(0.7)
+        boot_box.pack_start(cdrom_desc, False, False, 0)
+
+        # Direct kernel boot option
+        self._rb_kernel_boot = Gtk.RadioButton.new_with_label_from_widget(
+            self._rb_cdrom_boot, "Direct Kernel Boot (Recommended)"
+        )
+        self._rb_kernel_boot.connect("toggled", self._on_boot_mode_toggled)
+        boot_box.pack_start(self._rb_kernel_boot, False, False, 0)
+
+        kernel_desc = Gtk.Label(label="    Faster boot, configurable parameters - auto-extracts from ISO")
+        kernel_desc.set_halign(Gtk.Align.START)
+        kernel_desc.set_opacity(0.7)
+        boot_box.pack_start(kernel_desc, False, False, 0)
+
+        # Separator
+        boot_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+
+        # Boot files section (for direct kernel boot)
+        self._boot_files_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self._boot_files_box.set_margin_start(12)
+
+        # ISO file row
+        iso_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        iso_label = Gtk.Label(label="ISO Image:")
+        iso_label.set_size_request(100, -1)
+        iso_label.set_halign(Gtk.Align.START)
+        iso_row.pack_start(iso_label, False, False, 0)
+
+        self._iso_entry = Gtk.Entry()
+        self._iso_entry.set_placeholder_text("Path to Android-x86 ISO...")
+        self._iso_entry.set_editable(False)
+        self._fields["boot_iso"] = self._iso_entry
+        iso_row.pack_start(self._iso_entry, True, True, 0)
+
+        self._iso_browse_btn = Gtk.Button(label="Browse...")
+        self._iso_browse_btn.connect("clicked", self._on_browse_iso_clicked)
+        iso_row.pack_start(self._iso_browse_btn, False, False, 0)
+
+        self._iso_extract_btn = Gtk.Button(label="Extract Kernel")
+        self._iso_extract_btn.connect("clicked", self._on_extract_kernel_clicked)
+        self._iso_extract_btn.set_sensitive(False)
+        iso_row.pack_start(self._iso_extract_btn, False, False, 0)
+
+        self._boot_files_box.pack_start(iso_row, False, False, 0)
+
+        # Kernel path row
+        kernel_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        kernel_label = Gtk.Label(label="Kernel:")
+        kernel_label.set_size_request(100, -1)
+        kernel_label.set_halign(Gtk.Align.START)
+        kernel_row.pack_start(kernel_label, False, False, 0)
+
+        self._kernel_entry = Gtk.Entry()
+        self._kernel_entry.set_placeholder_text("Auto-detected or select manually...")
+        self._fields["boot_kernel"] = self._kernel_entry
+        kernel_row.pack_start(self._kernel_entry, True, True, 0)
+
+        kernel_browse = Gtk.Button(label="...")
+        kernel_browse.connect("clicked", self._on_browse_kernel_clicked)
+        kernel_row.pack_start(kernel_browse, False, False, 0)
+
+        self._boot_files_box.pack_start(kernel_row, False, False, 0)
+
+        # Initrd path row
+        initrd_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        initrd_label = Gtk.Label(label="Initrd:")
+        initrd_label.set_size_request(100, -1)
+        initrd_label.set_halign(Gtk.Align.START)
+        initrd_row.pack_start(initrd_label, False, False, 0)
+
+        self._initrd_entry = Gtk.Entry()
+        self._initrd_entry.set_placeholder_text("Auto-detected or select manually...")
+        self._fields["boot_initrd"] = self._initrd_entry
+        initrd_row.pack_start(self._initrd_entry, True, True, 0)
+
+        initrd_browse = Gtk.Button(label="...")
+        initrd_browse.connect("clicked", self._on_browse_initrd_clicked)
+        initrd_row.pack_start(initrd_browse, False, False, 0)
+
+        self._boot_files_box.pack_start(initrd_row, False, False, 0)
+
+        boot_box.pack_start(self._boot_files_box, False, False, 0)
+
+        # Separator
+        boot_box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 4)
+
+        # Boot preset selection
+        preset_label = Gtk.Label()
+        preset_label.set_markup("<b>Boot Preset</b>")
+        preset_label.set_halign(Gtk.Align.START)
+        boot_box.pack_start(preset_label, False, False, 0)
+
+        preset_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._boot_preset_combo = Gtk.ComboBoxText()
+        for preset_id, preset_info in BOOT_PRESETS.items():
+            self._boot_preset_combo.append(preset_id, preset_info["name"])
+        self._boot_preset_combo.set_active_id("software")
+        self._boot_preset_combo.connect("changed", self._on_boot_preset_changed)
+        self._fields["boot_preset"] = self._boot_preset_combo
+        preset_row.pack_start(self._boot_preset_combo, True, True, 0)
+        boot_box.pack_start(preset_row, False, False, 0)
+
+        # Preset description
+        self._preset_desc_label = Gtk.Label()
+        self._preset_desc_label.set_text(BOOT_PRESETS["software"]["description"])
+        self._preset_desc_label.set_halign(Gtk.Align.START)
+        self._preset_desc_label.set_opacity(0.7)
+        self._preset_desc_label.set_margin_start(4)
+        boot_box.pack_start(self._preset_desc_label, False, False, 0)
+
+        # Kernel command line
+        cmdline_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        cmdline_label = Gtk.Label(label="Kernel Params:")
+        cmdline_label.set_size_request(100, -1)
+        cmdline_label.set_halign(Gtk.Align.START)
+        cmdline_row.pack_start(cmdline_label, False, False, 0)
+
+        self._cmdline_entry = Gtk.Entry()
+        self._cmdline_entry.set_text(BOOT_PRESETS["software"]["params"])
+        self._cmdline_entry.set_sensitive(False)  # Only editable in custom mode
+        self._fields["boot_cmdline"] = self._cmdline_entry
+        cmdline_row.pack_start(self._cmdline_entry, True, True, 0)
+
+        boot_box.pack_start(cmdline_row, False, False, 0)
+
+        # Status/validation message
+        self._boot_status_label = Gtk.Label()
+        self._boot_status_label.set_halign(Gtk.Align.START)
+        self._boot_status_label.set_margin_top(4)
+        boot_box.pack_start(self._boot_status_label, False, False, 0)
+
+        boot_frame.add(boot_box)
+        self._form_box.pack_start(boot_frame, False, False, 0)
+
+        # Set default boot mode
+        self._rb_kernel_boot.set_active(True)
+
+    def _on_boot_mode_toggled(self, button):
+        """Handle boot mode radio button toggle."""
+        is_kernel_boot = self._rb_kernel_boot.get_active()
+        # Show/hide boot files section based on mode
+        self._boot_files_box.set_sensitive(is_kernel_boot)
+        self._boot_preset_combo.set_sensitive(is_kernel_boot)
+        self._update_boot_status()
+
+    def _on_boot_preset_changed(self, combo):
+        """Handle boot preset selection change."""
+        preset_id = combo.get_active_id()
+        if preset_id and preset_id in BOOT_PRESETS:
+            preset = BOOT_PRESETS[preset_id]
+            self._preset_desc_label.set_text(preset["description"])
+            self._cmdline_entry.set_text(preset["params"])
+            self._cmdline_entry.set_sensitive(preset_id == "custom")
+
+            # Update GPU mode in graphics section
+            gpu_combo = self._fields.get("gpu_mode")
+            if gpu_combo:
+                gpu_mode = preset["gpu_mode"]
+                model = gpu_combo.get_model()
+                for i, row in enumerate(model):
+                    if row[0] == gpu_mode:
+                        gpu_combo.set_active(i)
+                        break
+
+    def _on_browse_iso_clicked(self, button):
+        """Handle browse for ISO file."""
+        dialog = Gtk.FileChooserDialog(
+            title="Select Android-x86 ISO",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK,
+        )
+
+        # Add ISO filter
+        filter_iso = Gtk.FileFilter()
+        filter_iso.set_name("ISO Images")
+        filter_iso.add_pattern("*.iso")
+        dialog.add_filter(filter_iso)
+
+        filter_all = Gtk.FileFilter()
+        filter_all.set_name("All Files")
+        filter_all.add_pattern("*")
+        dialog.add_filter(filter_all)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            iso_path = dialog.get_filename()
+            self._iso_entry.set_text(iso_path)
+            self._iso_extract_btn.set_sensitive(True)
+            self._update_boot_status()
+
+            # Auto-detect if kernel/initrd already extracted
+            self._auto_detect_boot_files_from_iso(iso_path)
+
+        dialog.destroy()
+
+    def _auto_detect_boot_files_from_iso(self, iso_path):
+        """Try to find already extracted kernel/initrd near the ISO."""
+        iso_dir = os.path.dirname(iso_path)
+        boot_dir = os.path.join(iso_dir, "boot")
+
+        # Check for extracted files
+        kernel_paths = [
+            os.path.join(boot_dir, "kernel"),
+            os.path.join(iso_dir, "kernel"),
+        ]
+        initrd_paths = [
+            os.path.join(boot_dir, "initrd.img"),
+            os.path.join(iso_dir, "initrd.img"),
+        ]
+
+        for kpath in kernel_paths:
+            if os.path.isfile(kpath):
+                self._kernel_entry.set_text(kpath)
+                break
+
+        for ipath in initrd_paths:
+            if os.path.isfile(ipath):
+                self._initrd_entry.set_text(ipath)
+                break
+
+        self._update_boot_status()
+
+    def _on_extract_kernel_clicked(self, button):
+        """Extract kernel and initrd from ISO."""
+        iso_path = self._iso_entry.get_text().strip()
+        if not iso_path or not os.path.isfile(iso_path):
+            self._show_message(Gtk.MessageType.WARNING, "Please select a valid ISO file first.")
+            return
+
+        # Determine extraction directory
+        iso_dir = os.path.dirname(iso_path)
+        boot_dir = os.path.join(iso_dir, "boot")
+
+        # Show progress
+        self._boot_status_label.set_markup("<span foreground='#888888'>Extracting kernel and initrd...</span>")
+        button.set_sensitive(False)
+
+        def extract_files():
+            try:
+                os.makedirs(boot_dir, exist_ok=True)
+
+                # Use 7z to extract kernel and initrd
+                result = subprocess.run(
+                    ["7z", "e", "-o" + boot_dir, iso_path, "kernel", "initrd.img", "-y"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+
+                kernel_path = os.path.join(boot_dir, "kernel")
+                initrd_path = os.path.join(boot_dir, "initrd.img")
+
+                if os.path.isfile(kernel_path) and os.path.isfile(initrd_path):
+                    GLib.idle_add(self._extraction_complete, kernel_path, initrd_path, None)
+                else:
+                    GLib.idle_add(self._extraction_complete, None, None,
+                                  "Extraction failed - kernel or initrd not found in ISO")
+
+            except subprocess.TimeoutExpired:
+                GLib.idle_add(self._extraction_complete, None, None, "Extraction timed out")
+            except FileNotFoundError:
+                GLib.idle_add(self._extraction_complete, None, None,
+                              "7z not found - please install p7zip-full")
+            except Exception as e:
+                GLib.idle_add(self._extraction_complete, None, None, str(e))
+
+        # Run extraction in background thread
+        thread = threading.Thread(target=extract_files)
+        thread.daemon = True
+        thread.start()
+
+    def _extraction_complete(self, kernel_path, initrd_path, error):
+        """Handle extraction completion (called from main thread)."""
+        self._iso_extract_btn.set_sensitive(True)
+
+        if error:
+            self._boot_status_label.set_markup(f"<span foreground='#ff6666'>Error: {error}</span>")
+        else:
+            self._kernel_entry.set_text(kernel_path)
+            self._initrd_entry.set_text(initrd_path)
+            self._update_boot_status()
+
+        return False
+
+    def _on_browse_kernel_clicked(self, button):
+        """Handle browse for kernel file."""
+        dialog = Gtk.FileChooserDialog(
+            title="Select Kernel",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK,
+        )
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self._kernel_entry.set_text(dialog.get_filename())
+            self._update_boot_status()
+        dialog.destroy()
+
+    def _on_browse_initrd_clicked(self, button):
+        """Handle browse for initrd file."""
+        dialog = Gtk.FileChooserDialog(
+            title="Select Initrd",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK,
+        )
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self._initrd_entry.set_text(dialog.get_filename())
+            self._update_boot_status()
+        dialog.destroy()
+
+    def _validate_boot_config(self):
+        """Validate boot configuration and return list of errors."""
+        errors = []
+        is_kernel_boot = self._rb_kernel_boot.get_active()
+        iso_path = self._iso_entry.get_text().strip()
+        kernel_path = self._kernel_entry.get_text().strip()
+        initrd_path = self._initrd_entry.get_text().strip()
+
+        if is_kernel_boot:
+            # Direct kernel boot requires kernel and initrd
+            if not kernel_path:
+                errors.append("Kernel path is required for direct boot")
+            elif not os.path.isfile(kernel_path):
+                errors.append(f"Kernel file not found: {kernel_path}")
+
+            if not initrd_path:
+                errors.append("Initrd path is required for direct boot")
+            elif not os.path.isfile(initrd_path):
+                errors.append(f"Initrd file not found: {initrd_path}")
+
+            # ISO is recommended for system.sfs
+            if not iso_path and not self._current_image_path:
+                errors.append("ISO or image path required for system files")
+            elif iso_path and not os.path.isfile(iso_path):
+                errors.append(f"ISO file not found: {iso_path}")
+        else:
+            # CD-ROM boot requires ISO
+            if not iso_path:
+                errors.append("ISO file is required for CD-ROM boot")
+            elif not os.path.isfile(iso_path):
+                errors.append(f"ISO file not found: {iso_path}")
+
+        return errors
+
+    def _update_boot_status(self):
+        """Update the boot configuration status message."""
+        is_kernel_boot = self._rb_kernel_boot.get_active()
+
+        if is_kernel_boot:
+            kernel = self._kernel_entry.get_text().strip()
+            initrd = self._initrd_entry.get_text().strip()
+            iso = self._iso_entry.get_text().strip()
+
+            issues = []
+            if not iso and not (kernel and initrd):
+                issues.append("Select ISO or provide kernel/initrd")
+            if kernel and not os.path.isfile(kernel):
+                issues.append("Kernel file not found")
+            if initrd and not os.path.isfile(initrd):
+                issues.append("Initrd file not found")
+            if iso and not os.path.isfile(iso):
+                issues.append("ISO file not found")
+
+            if not issues and kernel and initrd:
+                self._boot_status_label.set_markup(
+                    "<span foreground='#66ff66'>✓ Ready for direct kernel boot</span>"
+                )
+            elif not issues and iso:
+                self._boot_status_label.set_markup(
+                    "<span foreground='#ffff66'>⚠ ISO selected - click 'Extract Kernel' for direct boot</span>"
+                )
+            else:
+                self._boot_status_label.set_markup(
+                    f"<span foreground='#ff6666'>✗ {'; '.join(issues)}</span>"
+                )
+        else:
+            # CD-ROM boot mode
+            iso = self._iso_entry.get_text().strip()
+            if iso and os.path.isfile(iso):
+                self._boot_status_label.set_markup(
+                    "<span foreground='#66ff66'>✓ Ready for CD-ROM boot</span>"
+                )
+            else:
+                self._boot_status_label.set_markup(
+                    "<span foreground='#ff6666'>✗ Select an ISO for CD-ROM boot</span>"
+                )
 
     def _build_config_sections(self):
         """Build the configuration expander sections."""
@@ -205,8 +662,17 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box1.set_margin_top(6)
         box1.set_margin_bottom(6)
 
-        gpu_opts = ["host", "software", "off"]
+        # GPU modes matching QEMU backend options
+        gpu_opts = ["software", "host", "virgl"]
         box1.pack_start(self._make_combo_row("GPU Mode:", gpu_opts, "gpu_mode"), False, False, 0)
+
+        # GPU mode description
+        gpu_desc = Gtk.Label()
+        gpu_desc.set_markup("<small>software=most compatible, host=virtio-gpu, virgl=OpenGL passthrough</small>")
+        gpu_desc.set_halign(Gtk.Align.START)
+        gpu_desc.set_opacity(0.7)
+        gpu_desc.set_margin_start(120)
+        box1.pack_start(gpu_desc, False, False, 0)
 
         api_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         api_label = Gtk.Label(label="Graphics API:")
@@ -329,10 +795,27 @@ class LoadOSPage(Gtk.ScrolledWindow):
         box8.set_margin_top(6)
         box8.set_margin_bottom(6)
 
-        hyper_opts = ["kvm", "haxm", "software"]
+        hyper_opts = ["kvm", "software"]
         box8.pack_start(self._make_combo_row("Hypervisor:", hyper_opts, "perf_hypervisor"), False, False, 0)
+
+        # KVM availability status
+        kvm_status = Gtk.Label()
+        if os.path.exists("/dev/kvm") and os.access("/dev/kvm", os.R_OK | os.W_OK):
+            kvm_status.set_markup("<small><span foreground='#66ff66'>✓ KVM available</span></small>")
+        else:
+            kvm_status.set_markup("<small><span foreground='#ff6666'>✗ KVM not available - will use software emulation (slower)</span></small>")
+        kvm_status.set_halign(Gtk.Align.START)
+        kvm_status.set_margin_start(120)
+        box8.pack_start(kvm_status, False, False, 0)
+
         ram_opts = ["2048", "4096", "6144", "8192", "12288", "16384"]
         box8.pack_start(self._make_combo_row("RAM (MB):", ram_opts, "perf_ram"), False, False, 0)
+
+        # Set default RAM to 4096
+        ram_combo = self._fields.get("perf_ram")
+        if ram_combo:
+            ram_combo.set_active(1)  # 4096
+
         box8.pack_start(self._make_spin_row("CPU Cores:", 4, 1, 16, "perf_cpu_cores"), False, False, 0)
 
         exp8.add(box8)
@@ -574,6 +1057,9 @@ class LoadOSPage(Gtk.ScrolledWindow):
             self._current_image_path = image_path
             info = self._parse_android_folder(image_path)
             self._display_os_info(info)
+
+            # Auto-detect and populate boot config
+            self._auto_populate_boot_config(image_path)
         else:
             self._current_image_path = None
             self._display_os_info({"Status": "Image not found"})
@@ -589,6 +1075,37 @@ class LoadOSPage(Gtk.ScrolledWindow):
         self._current_image_path = path
         info = self._parse_android_folder(path)
         self._display_os_info(info)
+
+        # Auto-detect and populate boot config
+        self._auto_populate_boot_config(path)
+
+    def _auto_populate_boot_config(self, image_path):
+        """Auto-detect and populate boot configuration from image path."""
+        if not image_path or not os.path.isdir(image_path):
+            return
+
+        # Look for ISO files
+        iso_files = []
+        for f in os.listdir(image_path):
+            if f.lower().endswith('.iso'):
+                iso_files.append(os.path.join(image_path, f))
+
+        if iso_files:
+            # Use the first ISO found
+            iso_path = iso_files[0]
+            self._iso_entry.set_text(iso_path)
+
+            # Check if kernel/initrd already extracted
+            self._auto_detect_boot_files_from_iso(iso_path)
+        else:
+            # No ISO - look for kernel/initrd directly
+            boot_files = self._detect_boot_files(image_path)
+            if boot_files["kernel"]:
+                self._kernel_entry.set_text(boot_files["kernel"])
+            if boot_files["initrd"]:
+                self._initrd_entry.set_text(boot_files["initrd"])
+
+        self._update_boot_status()
 
     def _parse_android_folder(self, path):
         """Parse Android system image folder for metadata."""
@@ -640,6 +1157,32 @@ class LoadOSPage(Gtk.ScrolledWindow):
         else:
             info["Status"] = "Warning: system.img not found"
 
+        # Check for ISO files
+        iso_files = [f for f in os.listdir(path) if f.lower().endswith('.iso')]
+        if iso_files:
+            info["ISO Image"] = iso_files[0]
+            if len(iso_files) > 1:
+                info["ISO Image"] += f" (+{len(iso_files)-1} more)"
+
+        # Check for boot files (kernel, initrd)
+        boot_files = self._detect_boot_files(path)
+        if boot_files["kernel"]:
+            info["Kernel"] = os.path.basename(boot_files["kernel"])
+        if boot_files["initrd"]:
+            info["Initrd"] = os.path.basename(boot_files["initrd"])
+
+        # Update status based on boot capability
+        if boot_files["kernel"] and boot_files["initrd"]:
+            info["Boot Mode"] = "Direct kernel boot (ready)"
+            info["Status"] = "Ready - kernel boot configured"
+        elif iso_files:
+            info["Boot Mode"] = "CD-ROM boot (ISO available)"
+            info["Status"] = "Ready - extract kernel for direct boot"
+        elif boot_files["system_image"]:
+            info["Boot Mode"] = "Disk boot (needs bootloader)"
+        else:
+            info["Boot Mode"] = "Not bootable"
+
         info["Path"] = path
         return info
 
@@ -669,6 +1212,10 @@ class LoadOSPage(Gtk.ScrolledWindow):
             ("Security Patch", ["ro.build.version.security_patch"]),
             ("Build Date", ["ro.build.date"]),
             ("System Image", ["system.img"]),
+            ("ISO Image", ["ISO Image"]),
+            ("Kernel", ["Kernel"]),
+            ("Initrd", ["Initrd"]),
+            ("Boot Mode", ["Boot Mode"]),
             ("Location", ["Path"]),
             ("Status", ["Status"]),
         ]
@@ -708,8 +1255,17 @@ class LoadOSPage(Gtk.ScrolledWindow):
             self._show_message(Gtk.MessageType.WARNING, "Please enter a profile name.")
             return
 
-        if not self._current_image_path:
-            self._show_message(Gtk.MessageType.WARNING, "Please select an Android OS image.")
+        # Validate boot configuration
+        validation_errors = self._validate_boot_config()
+        if validation_errors:
+            self._show_message(
+                Gtk.MessageType.WARNING,
+                "Boot configuration issues:\n\n" + "\n".join(f"• {e}" for e in validation_errors)
+            )
+            return
+
+        if not self._current_image_path and not self._iso_entry.get_text().strip():
+            self._show_message(Gtk.MessageType.WARNING, "Please select an Android OS image or ISO.")
             return
 
         # Check if profile already exists
@@ -742,6 +1298,64 @@ class LoadOSPage(Gtk.ScrolledWindow):
                 f"Failed to save profile: {str(e)}"
             )
 
+    def _detect_boot_files(self, image_path):
+        """Auto-detect boot files (kernel, initrd, system_image) in the image folder."""
+        boot_config = {
+            "kernel": "",
+            "initrd": "",
+            "system_image": "",
+            "kernel_cmdline": "",
+        }
+
+        if not image_path or not os.path.isdir(image_path):
+            return boot_config
+
+        # Look for kernel in common locations
+        kernel_paths = [
+            os.path.join(image_path, "boot", "kernel"),
+            os.path.join(image_path, "kernel"),
+            os.path.join(image_path, "boot", "vmlinuz"),
+            os.path.join(image_path, "vmlinuz"),
+        ]
+        for kpath in kernel_paths:
+            if os.path.isfile(kpath):
+                boot_config["kernel"] = kpath
+                break
+
+        # Look for initrd in common locations
+        initrd_paths = [
+            os.path.join(image_path, "boot", "initrd.img"),
+            os.path.join(image_path, "initrd.img"),
+            os.path.join(image_path, "boot", "ramdisk.img"),
+            os.path.join(image_path, "ramdisk.img"),
+        ]
+        for ipath in initrd_paths:
+            if os.path.isfile(ipath):
+                boot_config["initrd"] = ipath
+                break
+
+        # Look for system image
+        system_paths = [
+            os.path.join(image_path, "system.img"),
+            os.path.join(image_path, "system.sfs"),
+        ]
+        for spath in system_paths:
+            if os.path.isfile(spath):
+                boot_config["system_image"] = spath
+                break
+
+        # Default kernel command line for Android-x86
+        if boot_config["kernel"]:
+            boot_config["kernel_cmdline"] = (
+                "root=/dev/ram0 console=ttyS0 "
+                "androidboot.hardware=ranchu "
+                "androidboot.selinux=permissive "
+                "SRC=/ DATA= "
+                "buildvariant=userdebug"
+            )
+
+        return boot_config
+
     def _create_profile_from_form(self, name):
         """Create an OSProfile from the current form values."""
         now = datetime.now().isoformat()
@@ -750,6 +1364,33 @@ class LoadOSPage(Gtk.ScrolledWindow):
         profile.image_path = self._current_image_path or ""
         profile.created = now
         profile.modified = now
+
+        # Boot configuration from new Boot Configuration section
+        is_kernel_boot = self._rb_kernel_boot.get_active()
+        iso_path = self._iso_entry.get_text().strip()
+        kernel_path = self._kernel_entry.get_text().strip()
+        initrd_path = self._initrd_entry.get_text().strip()
+        kernel_cmdline = self._cmdline_entry.get_text().strip()
+
+        if is_kernel_boot and kernel_path and initrd_path:
+            # Direct kernel boot mode
+            profile.boot.kernel = kernel_path
+            profile.boot.initrd = initrd_path
+            profile.boot.cdrom_image = iso_path  # Still need ISO for system.sfs
+            profile.boot.kernel_cmdline = kernel_cmdline
+        elif iso_path:
+            # CD-ROM boot mode (or fallback)
+            profile.boot.cdrom_image = iso_path
+            profile.boot.kernel = ""
+            profile.boot.initrd = ""
+            profile.boot.kernel_cmdline = ""
+        else:
+            # Fallback to auto-detect from image path
+            boot_files = self._detect_boot_files(self._current_image_path)
+            profile.boot.kernel = boot_files["kernel"]
+            profile.boot.initrd = boot_files["initrd"]
+            profile.boot.system_image = boot_files["system_image"]
+            profile.boot.kernel_cmdline = boot_files["kernel_cmdline"]
 
         # Graphics
         profile.graphics.gpu_mode = self._get_combo_value("gpu_mode")

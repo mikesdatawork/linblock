@@ -35,7 +35,7 @@ class EmulatorDisplay(Gtk.DrawingArea):
         self._pixbuf = None
         self._display_width = 1080
         self._display_height = 1920
-        self._scale = 0.4
+        self._scale = 0.5  # Default scale for better legibility
         self._status_text = ""
         self._format = "bgra"
 

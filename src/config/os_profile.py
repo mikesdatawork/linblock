@@ -77,12 +77,24 @@ class GoogleServicesConfig:
     maps: bool = False
     assistant: bool = False
 
+
+@dataclass
+class BootConfig:
+    """Boot configuration for the emulator."""
+    kernel: str = ""           # Path to kernel image
+    initrd: str = ""           # Path to initrd/ramdisk
+    system_image: str = ""     # Path to system.img
+    kernel_cmdline: str = ""   # Kernel command line parameters
+    cdrom_image: str = ""      # Path to ISO for CD-ROM boot
+
+
 @dataclass
 class OSProfile:
     name: str = ""
     image_path: str = ""
     created: str = ""
     modified: str = ""
+    boot: BootConfig = field(default_factory=BootConfig)
     graphics: GraphicsConfig = field(default_factory=GraphicsConfig)
     adb: AdbConfig = field(default_factory=AdbConfig)
     device: DeviceConfig = field(default_factory=DeviceConfig)
@@ -110,6 +122,8 @@ class OSProfile:
         profile.image_path = data.get('image_path', '')
         profile.created = data.get('created', '')
         profile.modified = data.get('modified', '')
+        if 'boot' in data:
+            profile.boot = BootConfig(**data['boot'])
         if 'graphics' in data:
             profile.graphics = GraphicsConfig(**data['graphics'])
         if 'adb' in data:

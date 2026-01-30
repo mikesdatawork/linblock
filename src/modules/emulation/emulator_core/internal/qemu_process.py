@@ -6,6 +6,7 @@ with appropriate flags for Android system images.
 """
 
 import os
+import socket
 import subprocess
 import signal
 import threading
@@ -13,6 +14,25 @@ import time
 from typing import Optional, Dict, Any, Callable, List
 from dataclasses import dataclass, field
 from enum import Enum
+
+
+def _is_port_available(port: int) -> bool:
+    """Check if a TCP port is available."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', port))
+            return True
+    except OSError:
+        return False
+
+
+def _find_available_port(start_port: int, max_attempts: int = 100) -> int:
+    """Find an available port starting from start_port."""
+    for offset in range(max_attempts):
+        port = start_port + offset
+        if _is_port_available(port):
+            return port
+    raise RuntimeError(f"Could not find available port starting from {start_port}")
 
 
 class QEMUState(Enum):
@@ -36,12 +56,24 @@ class QEMUConfig:
     adb_port: int = 5555
     gpu_mode: str = "host"  # host, software, auto
 
+    # Boot configuration
+    kernel: Optional[str] = None  # Path to kernel image
+    initrd: Optional[str] = None  # Path to ramdisk/initrd
+    boot_image: Optional[str] = None  # Path to boot.img
+    kernel_cmdline: str = ""  # Additional kernel parameters
+    cdrom_image: Optional[str] = None  # Path to ISO for CD-ROM boot
+
     # Additional disk images
     userdata_image: Optional[str] = None
     cache_image: Optional[str] = None
+    data_image: Optional[str] = None  # For /data partition
 
     # GPU command pipe (for hardware-accelerated rendering)
     gpu_pipe_socket: Optional[str] = None  # Path to GPU pipe socket
+
+    # Logging
+    log_dir: Optional[str] = None  # Directory for QEMU logs
+    serial_log: Optional[str] = None  # Path for serial console log
 
     # Advanced options
     extra_args: List[str] = field(default_factory=list)
@@ -124,8 +156,8 @@ class QEMUProcess:
         """Build QEMU command line arguments."""
         cmd = [self.QEMU_BINARY]
 
-        # Machine type
-        cmd.extend(["-machine", "q35"])
+        # Machine type - use pc for better Android compatibility
+        cmd.extend(["-machine", "pc,accel=kvm" if self._check_kvm_available() else "pc"])
 
         # CPU configuration
         if self._config.use_kvm and self._check_kvm_available():
@@ -139,32 +171,85 @@ class QEMUProcess:
         # Memory
         cmd.extend(["-m", f"{self._config.memory_mb}M"])
 
-        # System image (main drive)
+        # Boot configuration (kernel, initrd, cmdline)
+        if self._config.kernel:
+            cmd.extend(["-kernel", self._config.kernel])
+
+            if self._config.initrd:
+                cmd.extend(["-initrd", self._config.initrd])
+
+            # Kernel command line for Android (only valid with -kernel)
+            kernel_cmdline = self._config.kernel_cmdline or ""
+            if not kernel_cmdline:
+                # Default Android kernel parameters with video mode
+                width = self._config.screen_width
+                height = self._config.screen_height
+                kernel_cmdline = (
+                    "root=/dev/ram0 "
+                    "console=ttyS0 "
+                    "androidboot.hardware=ranchu "
+                    "androidboot.serialno=EMULATOR "
+                    "androidboot.console=ttyS0 "
+                    "androidboot.selinux=permissive "
+                    f"video={width}x{height} "
+                )
+            else:
+                # Ensure console=ttyS0 is included for serial logging
+                if "console=" not in kernel_cmdline:
+                    kernel_cmdline = f"console=ttyS0 {kernel_cmdline}"
+            if kernel_cmdline:
+                cmd.extend(["-append", kernel_cmdline])
+
+        # System image (main drive) - use IDE for better boot compatibility
         if self._config.system_image:
             cmd.extend([
                 "-drive",
-                f"file={self._config.system_image},format=raw,if=virtio,readonly=on"
+                f"file={self._config.system_image},format=raw,if=ide,index=0"
             ])
 
         # Userdata image (persistent storage)
         if self._config.userdata_image:
             cmd.extend([
                 "-drive",
-                f"file={self._config.userdata_image},format=qcow2,if=virtio"
+                f"file={self._config.userdata_image},format=qcow2,if=ide,index=1"
             ])
 
-        # Display via VNC
+        # Data image
+        if self._config.data_image:
+            cmd.extend([
+                "-drive",
+                f"file={self._config.data_image},format=qcow2,if=ide,index=2"
+            ])
+
+        # Display via VNC with specific resolution
         vnc_display = self._config.vnc_port - 5900
         cmd.extend(["-vnc", f":{vnc_display}"])
 
-        # No graphical output (we use VNC)
-        cmd.extend(["-nographic"])
-
-        # GPU/Graphics
-        if self._config.gpu_mode == "host":
-            cmd.extend(["-device", "virtio-gpu-pci"])
+        # Serial console for logging
+        if self._config.serial_log:
+            cmd.extend(["-serial", f"file:{self._config.serial_log}"])
         else:
-            cmd.extend(["-device", "VGA"])
+            cmd.extend(["-serial", "stdio"])
+
+        # GPU/Graphics configuration
+        # Android-x86 works best with standard VGA for software rendering
+        # virtio-gpu and QXL have compatibility issues with Android's SurfaceFlinger
+        width = self._config.screen_width
+        height = self._config.screen_height
+
+        if self._config.gpu_mode == "host":
+            # Try virtio-gpu-pci for better performance (requires guest driver support)
+            cmd.extend(["-device", "virtio-gpu-pci"])
+        elif self._config.gpu_mode == "virgl":
+            # Virgil3D for OpenGL passthrough (experimental)
+            cmd.extend(["-device", "virtio-gpu-pci,virgl=on"])
+        else:
+            # Software mode: use standard VGA - most compatible with Android-x86
+            # This uses Android's built-in software renderer (swrast/llvmpipe)
+            cmd.extend(["-vga", "std"])
+
+        # Set VGA memory for higher resolutions
+        cmd.extend(["-global", "VGA.vgamem_mb=64"])
 
         # GPU command pipe (virtio-serial for GPU command transport)
         if self._config.gpu_pipe_socket:
@@ -174,17 +259,32 @@ class QEMUProcess:
                 "-device", "virtserialport,chardev=gpu_chardev,name=gpu_pipe",
             ])
 
-        # Network with ADB port forwarding
+        # Network with ADB port forwarding (disable PXE boot ROM)
         cmd.extend([
             "-netdev", f"user,id=net0,hostfwd=tcp::{self._config.adb_port}-:5555",
-            "-device", "virtio-net-pci,netdev=net0"
+            "-device", "e1000,netdev=net0,romfile="  # Disable PXE ROM
         ])
 
-        # Audio (disabled for now)
-        cmd.extend(["-audiodev", "none,id=audio0"])
+        # USB support for ADB
+        cmd.extend(["-usb", "-device", "usb-tablet"])
 
         # Random number generator
         cmd.extend(["-device", "virtio-rng-pci"])
+
+        # CD-ROM for ISO boot (Android-x86)
+        if self._config.cdrom_image:
+            cmd.extend(["-cdrom", self._config.cdrom_image])
+
+        # Boot order
+        if self._config.kernel:
+            # Direct kernel boot - no menu needed
+            cmd.extend(["-boot", "order=c,strict=on"])
+        elif self._config.cdrom_image:
+            # Boot from CD-ROM first (for ISO boot)
+            cmd.extend(["-boot", "order=d,menu=on"])
+        else:
+            # Disk boot with menu for debugging
+            cmd.extend(["-boot", "order=cd,menu=on"])
 
         # Extra arguments
         cmd.extend(self._config.extra_args)
@@ -230,6 +330,12 @@ class QEMUProcess:
             self._error_message = f"System image not found: {self._config.system_image}"
             self._set_state(QEMUState.ERROR)
             raise QEMUProcessError(self._error_message)
+
+        # Find available ports if configured ones are in use
+        if not _is_port_available(self._config.adb_port):
+            self._config.adb_port = _find_available_port(self._config.adb_port)
+        if not _is_port_available(self._config.vnc_port):
+            self._config.vnc_port = _find_available_port(self._config.vnc_port)
 
         self._set_state(QEMUState.STARTING)
         self._stop_event.clear()

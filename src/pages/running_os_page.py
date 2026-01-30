@@ -87,9 +87,13 @@ class RunningOSPage(Gtk.Box):
             device = self._profile_dict.get("device", {})
             graphics = self._profile_dict.get("graphics", {})
             adb = self._profile_dict.get("adb", {})
+            boot = self._profile_dict.get("boot", {})
 
-            # Get system image path
-            image_path = self._profile_dict.get("image_path", "")
+            # Get system image path - check multiple locations
+            image_path = (
+                boot.get("system_image") or
+                self._profile_dict.get("image_path", "")
+            )
 
             # If image_path is a directory, look for system.img inside it
             if image_path and os.path.isdir(image_path):
@@ -97,8 +101,34 @@ class RunningOSPage(Gtk.Box):
                 if os.path.exists(system_img):
                     image_path = system_img
 
+            # Get kernel and initrd paths from boot config
+            kernel_path = boot.get("kernel", "")
+            initrd_path = boot.get("initrd", "")
+            kernel_cmdline = boot.get("kernel_cmdline", "")
+            cdrom_image = boot.get("cdrom_image", "")
+
+            # If image_path is a directory, also check for kernel/initrd/ISO there
+            image_dir = self._profile_dict.get("image_path", "")
+            if image_dir and os.path.isdir(image_dir):
+                if not kernel_path:
+                    potential_kernel = os.path.join(image_dir, "boot", "kernel")
+                    if os.path.exists(potential_kernel):
+                        kernel_path = potential_kernel
+                if not initrd_path:
+                    potential_initrd = os.path.join(image_dir, "boot", "initrd.img")
+                    if os.path.exists(potential_initrd):
+                        initrd_path = potential_initrd
+                if not cdrom_image:
+                    # Look for ISO files
+                    for iso in ["android-x86-9.0-r2.iso", "android-x86.iso"]:
+                        potential_iso = os.path.join(image_dir, iso)
+                        if os.path.exists(potential_iso):
+                            cdrom_image = potential_iso
+                            break
+
             config = {
                 "system_image": image_path,
+                "cdrom_image": cdrom_image,
                 "memory_mb": performance.get("ram_mb", 4096),
                 "cpu_cores": performance.get("cpu_cores", 4),
                 "use_kvm": performance.get("hypervisor", "kvm") == "kvm",
@@ -107,6 +137,9 @@ class RunningOSPage(Gtk.Box):
                 "gpu_mode": graphics.get("gpu_mode", "host"),
                 "adb_port": adb.get("port", 5555),
                 "vnc_port": 5900,  # Will need port allocation for multiple instances
+                "kernel_path": kernel_path,
+                "initrd_path": initrd_path,
+                "kernel_cmdline": kernel_cmdline,
             }
 
             self._emulator = create_interface(config)
@@ -202,6 +235,13 @@ class RunningOSPage(Gtk.Box):
             state = self._emulator.get_state()
             if state == VMState.RUNNING:
                 return
+
+            # Prepare logging for new boot cycle (creates timestamped log file)
+            log_path = self.controls.prepare_logging_for_boot()
+
+            # Update emulator with logging configuration
+            if log_path and hasattr(self._emulator, 'set_serial_log'):
+                self._emulator.set_serial_log(log_path)
 
             # Update display to show starting state
             self.display.set_status("Starting Android...")

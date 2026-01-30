@@ -17,8 +17,8 @@ class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_title("LinBlock Emulator")
-        self.set_default_size(1024, 768)
-        self.set_size_request(1024, 768)
+        self.set_default_size(1400, 900)
+        self.set_size_request(1200, 800)
 
         self._profile_manager = ProfileManager()
         self._running_profiles = {}  # profile_name -> RunningOSPage
@@ -26,6 +26,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self._load_css()
         self._build_ui()
         self._load_saved_profiles()
+
+        # Connect destroy signal for cleanup
+        self.connect("destroy", self._on_destroy)
 
     def _load_css(self):
         css_path = None
@@ -170,3 +173,18 @@ class MainWindow(Gtk.ApplicationWindow):
         """Show OS List page and refresh it."""
         self._os_list_page.refresh_profiles()
         self.content.show_page("os_list")
+
+    def _on_destroy(self, widget):
+        """Handle window destroy - cleanup all running profiles."""
+        self.cleanup_all_profiles()
+
+    def cleanup_all_profiles(self):
+        """Clean up all running profiles - stop emulators and release resources."""
+        for profile_name, running_page in list(self._running_profiles.items()):
+            try:
+                print(f"Cleaning up profile: {profile_name}")
+                running_page.cleanup()
+            except Exception as e:
+                print(f"Error cleaning up profile {profile_name}: {e}")
+
+        self._running_profiles.clear()
